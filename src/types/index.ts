@@ -26,10 +26,15 @@ export interface MessageTemplate {
   createdAt: string;
 }
 
+export type AutoAssignStrategy = "round_robin" | "least_busy";
+
 export interface AutomationSettings {
   welcomeEnabled: boolean;
   welcomeTemplateId: string | null;
   inactivityHours: number;
+  autoAssignEnabled: boolean;
+  autoAssignStrategy: AutoAssignStrategy;
+  autoAssignRoles: ("admin" | "agente")[]; // roles eligible for assignment
 }
 
 export interface Agent {

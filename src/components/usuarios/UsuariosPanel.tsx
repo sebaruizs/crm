@@ -1,27 +1,32 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import type { Agent, UserRole } from "@/types";
-import { useAgents, ROLE_LABEL, ROLE_BADGE } from "@/store/agents-store";
-import { CONTACTS } from "@/mock/contacts";
+import { useState, useMemo, useEffect } from "react";
+import type { UserRole, Contact } from "@/types";
+import { useAgents, ROLE_LABEL, ROLE_BADGE, type PublicAgent } from "@/store/agents-store";
 import { cn } from "@/lib/utils";
 import UserFormModal from "./UserFormModal";
 
 export default function UsuariosPanel() {
   const { agents, isAdmin, currentUser, deleteAgent } = useAgents();
   const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Agent | null>(null);
+  const [editing, setEditing] = useState<PublicAgent | null>(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
-  const [confirmDelete, setConfirmDelete] = useState<Agent | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<PublicAgent | null>(null);
+  const [contactsByAgent, setContactsByAgent] = useState<Record<string, number>>({});
 
-  const contactsByAgent = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const c of CONTACTS) {
-      if (c.assignedAgentId) map[c.assignedAgentId] = (map[c.assignedAgentId] ?? 0) + 1;
-    }
-    return map;
-  }, []);
+  useEffect(() => {
+    fetch("/api/contacts", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { contacts?: Contact[] }) => {
+        const map: Record<string, number> = {};
+        for (const c of d.contacts ?? []) {
+          if (c.assignedAgentId) map[c.assignedAgentId] = (map[c.assignedAgentId] ?? 0) + 1;
+        }
+        setContactsByAgent(map);
+      })
+      .catch(() => {});
+  }, [agents]);
 
   const filtered = agents.filter((a) => {
     if (roleFilter !== "all" && a.role !== roleFilter) return false;
@@ -34,12 +39,12 @@ export default function UsuariosPanel() {
     setEditing(null);
     setModalOpen(true);
   }
-  function openEdit(agent: Agent) {
+  function openEdit(agent: PublicAgent) {
     setEditing(agent);
     setModalOpen(true);
   }
-  function handleDelete(agent: Agent) {
-    deleteAgent(agent.id);
+  async function handleDelete(agent: PublicAgent) {
+    await deleteAgent(agent.id);
     setConfirmDelete(null);
   }
 

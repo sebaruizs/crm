@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Agent, UserRole } from "@/types";
-import { useAgents, AGENT_COLOR_PRESETS, ROLE_LABEL } from "@/store/agents-store";
+import type { UserRole } from "@/types";
+import { useAgents, AGENT_COLOR_PRESETS, ROLE_LABEL, type PublicAgent } from "@/store/agents-store";
 import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
-  agent: Agent | null;
+  agent: PublicAgent | null;
   onClose: () => void;
 }
 
@@ -50,22 +50,34 @@ export default function UserFormModal({ open, agent, onClose }: Props) {
 
   if (!open) return null;
 
-  function handleSubmit(e: React.FormEvent) {
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return setError("El nombre es requerido");
     if (!email.trim() || !/.+@.+\..+/.test(email)) return setError("Email inválido");
     if (!agent && password.length < 6) return setError("La contraseña debe tener al menos 6 caracteres");
     if (agent && password && password.length < 6) return setError("La contraseña debe tener al menos 6 caracteres");
-    if (agent) {
-      updateAgent(agent.id, {
-        name, email, color, role,
-        avatarInitials: initials,
-        ...(password ? { password } : {}),
-      });
-    } else {
-      addAgent({ name, email, color, role, password, avatarInitials: initials });
+    setSubmitting(true);
+    try {
+      if (agent) {
+        await updateAgent(agent.id, {
+          name, email, color, role,
+          avatarInitials: initials,
+          ...(password ? { password } : {}),
+        });
+      } else {
+        const result = await addAgent({ name, email, color, role, password, avatarInitials: initials });
+        if (!result) {
+          setError("No se pudo crear el usuario (¿email duplicado o servidor caído?)");
+          setSubmitting(false);
+          return;
+        }
+      }
+      onClose();
+    } finally {
+      setSubmitting(false);
     }
-    onClose();
   }
 
   return (
@@ -239,9 +251,10 @@ export default function UserFormModal({ open, agent, onClose }: Props) {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-medium rounded-lg transition-colors"
+              disabled={submitting}
+              className="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
             >
-              {agent ? "Guardar cambios" : "Crear usuario"}
+              {submitting ? "Guardando…" : agent ? "Guardar cambios" : "Crear usuario"}
             </button>
           </div>
         </form>

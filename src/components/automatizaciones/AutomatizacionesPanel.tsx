@@ -9,6 +9,9 @@ const DEFAULTS: AutomationSettings = {
   welcomeEnabled: false,
   welcomeTemplateId: null,
   inactivityHours: 4,
+  autoAssignEnabled: false,
+  autoAssignStrategy: "least_busy",
+  autoAssignRoles: ["agente"],
 };
 
 export default function AutomatizacionesPanel() {
@@ -142,6 +145,97 @@ export default function AutomatizacionesPanel() {
             )}
           </Card>
 
+          {/* Auto-assignment */}
+          <Card title="Asignación automática" subtitle="Asigna cada lead nuevo a un usuario apenas entra">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-medium text-slate-900">Activar asignación automática</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Cuando entra una conversación nueva, se asigna automáticamente al usuario que mejor encaje según la estrategia elegida
+                </p>
+              </div>
+              <Toggle
+                checked={settings.autoAssignEnabled}
+                onChange={(v) => save({ autoAssignEnabled: v })}
+                disabled={saving}
+              />
+            </div>
+
+            {settings.autoAssignEnabled && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-2">Estrategia</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => save({ autoAssignStrategy: "least_busy" })}
+                      className={cn(
+                        "p-3 rounded-lg border-2 text-left transition-colors",
+                        settings.autoAssignStrategy === "least_busy"
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-slate-200 hover:border-slate-300"
+                      )}
+                    >
+                      <p className="text-sm font-semibold text-slate-900">Menos ocupado</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Asigna al usuario con menos contactos asignados</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => save({ autoAssignStrategy: "round_robin" })}
+                      className={cn(
+                        "p-3 rounded-lg border-2 text-left transition-colors",
+                        settings.autoAssignStrategy === "round_robin"
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-slate-200 hover:border-slate-300"
+                      )}
+                    >
+                      <p className="text-sm font-semibold text-slate-900">Rotación</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Round-robin: rota entre los usuarios elegibles</p>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-2">Roles elegibles para recibir asignaciones</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(["admin", "agente"] as const).map((role) => {
+                      const checked = settings.autoAssignRoles.includes(role);
+                      return (
+                        <button
+                          key={role}
+                          type="button"
+                          onClick={() => {
+                            const next = checked
+                              ? settings.autoAssignRoles.filter((r) => r !== role)
+                              : [...settings.autoAssignRoles, role];
+                            if (next.length === 0) return; // require at least one
+                            save({ autoAssignRoles: next });
+                          }}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-medium transition-colors",
+                            checked
+                              ? role === "admin"
+                                ? "bg-purple-100 text-purple-700 ring-2 ring-purple-300"
+                                : "bg-slate-200 text-slate-900 ring-2 ring-slate-400"
+                              : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                          )}
+                        >
+                          {checked && (
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                          {role === "admin" ? "Administradores" : "Agentes"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">Al menos un rol debe estar seleccionado.</p>
+                </div>
+              </div>
+            )}
+          </Card>
+
           {/* Inactivity */}
           <Card title="Alerta de inactividad" subtitle="Resalta las conversaciones que llevan tiempo sin respuesta del equipo">
             <div className="flex items-center gap-3">
@@ -167,7 +261,7 @@ export default function AutomatizacionesPanel() {
             <ul className="space-y-2 text-sm text-slate-500">
               <li className="flex items-center gap-2">
                 <span className="w-1 h-1 rounded-full bg-slate-400" />
-                Asignación automática por reglas (round-robin, por campaña, por horario)
+                Asignación por campaña o por horario
               </li>
               <li className="flex items-center gap-2">
                 <span className="w-1 h-1 rounded-full bg-slate-400" />

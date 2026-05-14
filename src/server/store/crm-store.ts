@@ -45,6 +45,9 @@ const DEFAULT_SETTINGS: AutomationSettings = {
   welcomeEnabled: false,
   welcomeTemplateId: null,
   inactivityHours: 4,
+  autoAssignEnabled: false,
+  autoAssignStrategy: "least_busy",
+  autoAssignRoles: ["agente"],
 };
 
 interface StoreShape {
@@ -263,6 +266,50 @@ class CrmStore {
     contact.notes.splice(idx, 1);
     this.scheduleSave();
     return true;
+  }
+
+  // ─── Auto-assignment ─────────────────────────────────────────
+
+  /**
+   * Picks the next agent to assign a contact to and writes the assignment.
+   * Returns the assigned agentId, or null if no eligible agents.
+   *
+   * Strategies:
+   *  - least_busy: agent with fewest currently-assigned contacts
+   *  - round_robin: rotates through eligible agents in order
+   */
+  autoAssign(
+    contactId: string,
+    eligibleAgents: { id: string }[],
+    strategy: "round_robin" | "least_busy" = "least_busy"
+  ): string | null {
+    if (eligibleAgents.length === 0) return null;
+    const contact = this.get(contactId);
+    if (!contact || contact.assignedAgentId) return contact?.assignedAgentId ?? null;
+
+    let chosen: string | null = null;
+    if (strategy === "least_busy") {
+      const counts = eligibleAgents.map((a) => ({
+        id: a.id,
+        count: this.contacts.filter((c) => c.assignedAgentId === a.id).length,
+      }));
+      counts.sort((a, b) => a.count - b.count);
+      chosen = counts[0]?.id ?? null;
+    } else {
+      // round_robin: find the agent who got the most recent assignment, pick the next
+      const recent = [...this.contacts]
+        .filter((c) => c.assignedAgentId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const lastAssignedId = recent[0]?.assignedAgentId;
+      const ids = eligibleAgents.map((a) => a.id);
+      const lastIdx = lastAssignedId ? ids.indexOf(lastAssignedId) : -1;
+      chosen = ids[(lastIdx + 1) % ids.length] ?? null;
+    }
+    if (chosen) {
+      contact.assignedAgentId = chosen;
+      this.scheduleSave();
+    }
+    return chosen;
   }
 
   // ─── Contact patch (existing) ────────────────────────────────

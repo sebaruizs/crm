@@ -15,6 +15,7 @@ import {
 import { Boom } from "@hapi/boom";
 import type { WhatsAppLine, InboundMessage, SendResult } from "./types";
 import { crmStore } from "@/server/store/crm-store";
+import { usersStore } from "@/server/store/users-store";
 
 const SESSIONS_DIR = path.join(process.cwd(), "baileys-sessions");
 const META_FILE = path.join(SESSIONS_DIR, "lines.json");
@@ -242,10 +243,23 @@ class BaileysManager {
           messageId: msg.key.id ?? undefined,
         });
 
-        // Fire welcome message if this is a brand-new contact and the
-        // admin has enabled the automation
+        // For brand-new contacts, run automations:
+        // (1) Auto-assign to an eligible agent
+        // (2) Fire welcome message if configured
         if (isNew) {
           const settings = crmStore.getSettings();
+
+          // Auto-assignment
+          if (settings.autoAssignEnabled) {
+            await usersStore.init();
+            const eligible = usersStore
+              .list()
+              .filter((u) => settings.autoAssignRoles.includes(u.role))
+              .map((u) => ({ id: u.id }));
+            crmStore.autoAssign(contact.id, eligible, settings.autoAssignStrategy);
+          }
+
+          // Welcome message
           if (settings.welcomeEnabled && settings.welcomeTemplateId) {
             const tpl = crmStore.getTemplate(settings.welcomeTemplateId);
             if (tpl) {

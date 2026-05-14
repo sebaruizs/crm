@@ -2,10 +2,11 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Agent, UserRole } from "@/types";
-import { AGENTS as SEED_AGENTS } from "@/mock/agents";
 
-const STORAGE_KEY = "crm.agents.v3";
 const SESSION_KEY = "crm.session.v1";
+
+// Public-facing user (no password)
+export type PublicAgent = Omit<Agent, "password">;
 
 export interface AgentInput {
   name: string;
@@ -16,66 +17,58 @@ export interface AgentInput {
   avatarInitials?: string;
 }
 
-export type LoginResult = { ok: true; user: Agent } | { ok: false; error: string };
+export type LoginResult = { ok: true; user: PublicAgent } | { ok: false; error: string };
 
 interface AgentsContextValue {
-  agents: Agent[];
-  currentUser: Agent | null;
+  agents: PublicAgent[];
+  currentUser: PublicAgent | null;
   isAdmin: boolean;
   hydrated: boolean;
-  findAgent: (id: string | undefined) => Agent | undefined;
-  login: (email: string, password: string) => LoginResult;
+  findAgent: (id: string | undefined) => PublicAgent | undefined;
+  login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
-  addAgent: (input: AgentInput) => Agent;
-  updateAgent: (id: string, patch: Partial<AgentInput>) => void;
-  deleteAgent: (id: string) => void;
+  addAgent: (input: AgentInput) => Promise<PublicAgent | null>;
+  updateAgent: (id: string, patch: Partial<AgentInput>) => Promise<void>;
+  deleteAgent: (id: string) => Promise<void>;
+  refreshAgents: () => Promise<void>;
 }
 
 const AgentsContext = createContext<AgentsContextValue | null>(null);
 
-function deriveInitials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
-
-function nextId() {
-  return `a-${Math.random().toString(36).slice(2, 9)}`;
-}
-
 export function AgentsProvider({ children }: { children: React.ReactNode }) {
-  const [agents, setAgents] = useState<Agent[]>(SEED_AGENTS);
+  const [agents, setAgents] = useState<PublicAgent[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
-  useEffect(() => {
+  const refreshAgents = useCallback(async () => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Agent[];
-        if (Array.isArray(parsed) && parsed.length > 0) setAgents(parsed);
-      }
-      const savedUser = localStorage.getItem(SESSION_KEY);
-      if (savedUser) setCurrentUserId(savedUser);
+      const res = await fetch("/api/users", { cache: "no-store" });
+      const data = await res.json();
+      setAgents(data.users ?? []);
     } catch {
       /* ignore */
     }
-    setHydrated(true);
   }, []);
 
+  // Hydrate session + load agents on mount
   useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(agents));
-    } catch {
-      /* ignore */
-    }
-  }, [agents, hydrated]);
+    let cancelled = false;
+    (async () => {
+      // Restore saved session id (does not validate against server here; AgentsContext only
+      // ensures the user exists in the fetched list before exposing currentUser).
+      try {
+        const saved = localStorage.getItem(SESSION_KEY);
+        if (saved) setCurrentUserId(saved);
+      } catch {
+        /* ignore */
+      }
+      await refreshAgents();
+      if (!cancelled) setHydrated(true);
+    })();
+    return () => { cancelled = true; };
+  }, [refreshAgents]);
 
+  // Persist current session id
   useEffect(() => {
     if (!hydrated) return;
     try {
@@ -98,61 +91,55 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
     [agents]
   );
 
-  const login = useCallback(
-    (email: string, password: string): LoginResult => {
-      const normalized = email.trim().toLowerCase();
-      const user = agents.find((a) => a.email.toLowerCase() === normalized);
-      if (!user) return { ok: false, error: "Usuario no encontrado" };
-      if (user.password !== password) return { ok: false, error: "Contraseña incorrecta" };
-      setCurrentUserId(user.id);
-      return { ok: true, user };
-    },
-    [agents]
-  );
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error ?? "Error desconocido" };
+      setCurrentUserId(data.user.id);
+      await refreshAgents();
+      return { ok: true, user: data.user };
+    } catch (err) {
+      return { ok: false, error: `Error de red: ${String(err)}` };
+    }
+  }, [refreshAgents]);
 
   const logout = useCallback(() => {
     setCurrentUserId(null);
   }, []);
 
-  const addAgent = useCallback((input: AgentInput): Agent => {
-    const agent: Agent = {
-      id: nextId(),
-      name: input.name.trim(),
-      email: input.email.trim(),
-      color: input.color,
-      role: input.role,
-      password: input.password ?? "demo1234",
-      avatarInitials: (input.avatarInitials || deriveInitials(input.name)).slice(0, 2).toUpperCase(),
-    };
-    setAgents((list) => [...list, agent]);
-    return agent;
-  }, []);
+  const addAgent = useCallback(async (input: AgentInput): Promise<PublicAgent | null> => {
+    const res = await fetch("/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    const data = await res.json();
+    if (!res.ok) return null;
+    await refreshAgents();
+    return data.user;
+  }, [refreshAgents]);
 
-  const updateAgent = useCallback((id: string, patch: Partial<AgentInput>) => {
-    setAgents((list) =>
-      list.map((a) => {
-        if (a.id !== id) return a;
-        const next = { ...a };
-        if (patch.name !== undefined) next.name = patch.name.trim();
-        if (patch.email !== undefined) next.email = patch.email.trim();
-        if (patch.color !== undefined) next.color = patch.color;
-        if (patch.role !== undefined) next.role = patch.role;
-        if (patch.password) next.password = patch.password; // only overwrite if non-empty
-        if (patch.avatarInitials !== undefined) {
-          next.avatarInitials = patch.avatarInitials.slice(0, 2).toUpperCase();
-        } else if (patch.name !== undefined) {
-          next.avatarInitials = deriveInitials(patch.name);
-        }
-        return next;
-      })
-    );
-  }, []);
+  const updateAgent = useCallback(async (id: string, patch: Partial<AgentInput>) => {
+    const res = await fetch(`/api/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (res.ok) await refreshAgents();
+  }, [refreshAgents]);
 
-  const deleteAgent = useCallback((id: string) => {
-    setAgents((list) => list.filter((a) => a.id !== id));
-    // If you delete yourself, log out
-    if (currentUserId === id) setCurrentUserId(null);
-  }, [currentUserId]);
+  const deleteAgent = useCallback(async (id: string) => {
+    const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      if (currentUserId === id) setCurrentUserId(null);
+      await refreshAgents();
+    }
+  }, [currentUserId, refreshAgents]);
 
   return (
     <AgentsContext.Provider
@@ -167,6 +154,7 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
         addAgent,
         updateAgent,
         deleteAgent,
+        refreshAgents,
       }}
     >
       {children}

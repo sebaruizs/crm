@@ -21,11 +21,11 @@ export default function LoginForm() {
     }
   }, [hydrated, currentUser, router]);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setSubmitting(true);
-    const result = login(email, password);
+    const result = await login(email, password);
     if (result.ok) {
       router.replace("/resumen");
     } else {
