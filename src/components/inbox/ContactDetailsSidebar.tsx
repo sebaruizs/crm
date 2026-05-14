@@ -1,0 +1,349 @@
+"use client";
+
+import { useState } from "react";
+import type { Contact } from "@/types";
+import { useAgents } from "@/store/agents-store";
+import { TAGS } from "@/mock/tags";
+import { cn } from "@/lib/utils";
+import { SOURCE_LABELS, STATUS_LABELS } from "@/lib/constants";
+
+type Tab = "campos" | "dnd" | "acciones";
+
+interface Props {
+  contact: Contact;
+  onClose: () => void;
+  onChangeAgent: (agentId: string | undefined) => void;
+}
+
+function FieldRow({
+  label,
+  children,
+  collapsible,
+}: {
+  label: string;
+  children: React.ReactNode;
+  collapsible?: boolean;
+}) {
+  return (
+    <div className="py-2.5 border-b border-slate-100 last:border-0">
+      <div className="flex items-center justify-between mb-1">
+        <label className="text-xs text-slate-500">{label}</label>
+        {collapsible && (
+          <button className="text-slate-400 hover:text-slate-600">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Section({
+  title,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-t border-slate-200">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hover:bg-slate-50"
+      >
+        {title}
+        <svg
+          className={cn("w-4 h-4 transition-transform", open && "rotate-180")}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && <div className="px-4 pb-3">{children}</div>}
+    </div>
+  );
+}
+
+export default function ContactDetailsSidebar({ contact, onClose, onChangeAgent }: Props) {
+  const [tab, setTab] = useState<Tab>("campos");
+  const [search, setSearch] = useState("");
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const { agents, currentUser, isAdmin } = useAgents();
+
+  const agent = agents.find((a) => a.id === contact.assignedAgentId);
+  const isUnassigned = !contact.assignedAgentId;
+  const canReassign = isAdmin;
+  const canSelfAssign = !isAdmin && isUnassigned;
+  const tags = TAGS.filter((t) => contact.tagIds.includes(t.id));
+
+  const initials = contact.name.split(" ").map((w) => w[0]).slice(0, 2).join("");
+  const [first, ...rest] = contact.name.split(" ");
+  const last = rest.join(" ");
+
+  return (
+    <aside className="flex flex-col w-[340px] shrink-0 bg-white border-l border-slate-200 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+        <h3 className="text-sm font-bold text-slate-900">Detalles del contacto</h3>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {/* Avatar / name */}
+        <div className="px-4 py-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-bold">
+            {initials}
+          </div>
+          <h2 className="flex-1 text-base font-bold text-slate-900 truncate">{contact.name}</h2>
+          <button className="text-slate-400 hover:text-slate-600">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Propietario / Seguidores */}
+        <div className="px-4 pb-3 grid grid-cols-2 gap-3">
+          <div className="relative">
+            <p className="text-xs text-slate-500 mb-1">Propietario</p>
+
+            {/* Self-assign (agent on unassigned) */}
+            {canSelfAssign && currentUser && (
+              <button
+                onClick={() => onChangeAgent(currentUser.id)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 hover:bg-amber-200 text-xs font-medium transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                Asignarme
+              </button>
+            )}
+
+            {/* Admin: full dropdown */}
+            {canReassign && (
+              <>
+                <button
+                  onClick={() => setAgentMenuOpen((v) => !v)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full text-xs font-medium hover:ring-2 hover:ring-blue-200 transition-shadow",
+                    agent ? "bg-slate-100 text-slate-700" : "border border-dashed border-slate-300 text-slate-500"
+                  )}
+                >
+                  {agent ? (
+                    <>
+                      <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white", agent.color)}>
+                        {agent.avatarInitials}
+                      </span>
+                      <span className="truncate">{agent.name.split(" ")[0]}</span>
+                      <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </>
+                  ) : (
+                    <span>+ Asignar agente</span>
+                  )}
+                </button>
+
+                {agentMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => setAgentMenuOpen(false)} />
+                    <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-40 py-1">
+                      <p className="px-3 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                        Cambiar agente
+                      </p>
+                      {agent && (
+                        <button
+                          onClick={() => {
+                            onChangeAgent(undefined);
+                            setAgentMenuOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 text-amber-700 border-b border-slate-100"
+                        >
+                          <div className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </div>
+                          <span>Liberar</span>
+                        </button>
+                      )}
+                      {agents.map((a) => (
+                        <button
+                          key={a.id}
+                          onClick={() => {
+                            onChangeAgent(a.id);
+                            setAgentMenuOpen(false);
+                          }}
+                          className={cn(
+                            "w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50",
+                            a.id === contact.assignedAgentId && "bg-blue-50"
+                          )}
+                        >
+                          <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0", a.color)}>
+                            {a.avatarInitials}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-slate-900 truncate">{a.name}</p>
+                            <p className="text-[10px] text-slate-500 truncate">{a.email}</p>
+                          </div>
+                          {a.id === contact.assignedAgentId && (
+                            <svg className="w-4 h-4 text-blue-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* Agent viewing their own (read-only) */}
+            {!canReassign && !canSelfAssign && agent && (
+              <div className="inline-flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
+                <span className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white", agent.color)}>
+                  {agent.avatarInitials}
+                </span>
+                <span className="truncate">{agent.name.split(" ")[0]}</span>
+              </div>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 mb-1">Seguidores</p>
+            <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed border-slate-300 text-xs text-slate-500 hover:bg-slate-50">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Agregar
+            </button>
+          </div>
+        </div>
+
+        {/* Etiquetas */}
+        <div className="px-4 pb-3">
+          <p className="text-xs text-slate-500 mb-1">Etiquetas ({tags.length})</p>
+          <div className="flex flex-wrap gap-1">
+            {tags.map((t) => (
+              <span key={t.id} className={cn("inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium", t.color)}>
+                {t.label}
+                <button className="opacity-50 hover:opacity-100">×</button>
+              </span>
+            ))}
+            <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed border-slate-300 text-xs text-slate-500 hover:bg-slate-50">
+              +
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-200 px-4">
+          {(["campos", "dnd", "acciones"] as Tab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                "px-3 py-2 text-xs font-medium border-b-2 transition-colors",
+                tab === t
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
+              )}
+            >
+              {t === "campos" ? "Todos los campos" : t === "dnd" ? "DND" : "Acciones"}
+            </button>
+          ))}
+        </div>
+
+        {/* Search */}
+        <div className="px-4 py-3">
+          <div className="relative">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar campos y carpetas"
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        {/* Sections */}
+        <Section title="Contacto">
+          <FieldRow label="Nombre">
+            <input type="text" defaultValue={first} className="w-full text-sm text-slate-900 focus:outline-none bg-transparent" />
+          </FieldRow>
+          <FieldRow label="Apellidos">
+            <input type="text" defaultValue={last} className="w-full text-sm text-slate-900 focus:outline-none bg-transparent" />
+          </FieldRow>
+          <FieldRow label="Correo electrónico">
+            <input type="email" placeholder="--" className="w-full text-sm text-slate-900 focus:outline-none bg-transparent" />
+          </FieldRow>
+          <FieldRow label="Teléfono">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🇲🇽</span>
+              <input type="tel" defaultValue={contact.phone} className="flex-1 text-sm text-slate-900 focus:outline-none bg-transparent" />
+              <button className="text-xs text-slate-400 hover:text-slate-600">Seleccionar ⌄</button>
+            </div>
+          </FieldRow>
+          <FieldRow label="Fecha de nacimiento">
+            <input type="text" placeholder="--" className="w-full text-sm text-slate-900 focus:outline-none bg-transparent" />
+          </FieldRow>
+          <FieldRow label="Fuente del contacto">
+            <p className="text-sm text-slate-900">{SOURCE_LABELS[contact.source]}</p>
+          </FieldRow>
+          <FieldRow label="Tipo de contacto" collapsible>
+            <p className="text-sm text-slate-900">{STATUS_LABELS[contact.status]}</p>
+          </FieldRow>
+        </Section>
+
+        <Section title="Cualificación del lead" defaultOpen>
+          {contact.customFields.map((cf) => (
+            <FieldRow key={cf.key} label={cf.label} collapsible>
+              <p className="text-sm text-slate-900">{cf.value}</p>
+            </FieldRow>
+          ))}
+          <FieldRow label="¿Actualmente estás trabajando o querés empezar a trabajar en plataformas de delivery?" collapsible>
+            <p className="text-sm text-slate-900">Sí, quiero empezar a trabajar</p>
+          </FieldRow>
+          <FieldRow label="¿Actualmente tenés moto para trabajar?" collapsible>
+            <p className="text-sm text-slate-900">{contact.vehicleInterest ? "Sí, tengo moto propia" : "No, necesito alquilar"}</p>
+          </FieldRow>
+          <FieldRow label="¿Cuántos días a la semana trabajás (o pensás trabajar) en plataformas?" collapsible>
+            <p className="text-sm text-slate-900">5-6 días</p>
+          </FieldRow>
+          <FieldRow label="Licencia verificada">
+            <span className={cn("inline-block text-xs px-2 py-0.5 rounded-full font-medium", contact.licenseVerified ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+              {contact.licenseVerified ? "Verificada" : "Pendiente"}
+            </span>
+          </FieldRow>
+        </Section>
+
+        <Section title="Información adicional" defaultOpen={false}>
+          <FieldRow label="ID del contacto">
+            <p className="text-xs text-slate-500 font-mono">{contact.id}</p>
+          </FieldRow>
+          <FieldRow label="Creado">
+            <p className="text-sm text-slate-900">{new Date(contact.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" })}</p>
+          </FieldRow>
+        </Section>
+      </div>
+    </aside>
+  );
+}
