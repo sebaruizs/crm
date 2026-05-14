@@ -3,19 +3,52 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import type { Contact, MessagePreview } from "@/types";
+import type { Contact, MessagePreview, MessageTemplate, Note } from "@/types";
 import { CONTACTS as SEED_CONTACTS } from "@/mock/contacts";
 
 const STORE_DIR = path.join(process.cwd(), "baileys-sessions");
 const STORE_FILE = path.join(STORE_DIR, "crm.json");
 const MAX_MESSAGES_PER_CONTACT = 200;
 
+const SEED_TEMPLATES: MessageTemplate[] = [
+  {
+    id: "tpl-welcome",
+    label: "Bienvenida",
+    body: "¡Hola {{nombre}}! 👋 Gracias por contactarnos. Soy del equipo de AutoFlota y te voy a ayudar a encontrar el vehículo ideal para que arranques a trabajar. ¿Para qué plataforma vas a manejar?",
+    shortcut: "bienvenida",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "tpl-pricing",
+    label: "Precios",
+    body: "Manejamos tres planes:\n\n• Semanal: $1,800 (incluye seguro y GPS)\n• Mensual: $6,500 (1 semana de gracia para arranque)\n• Anual: $65,000 (mejor precio)\n\nTodos incluyen mantenimiento. ¿Cuál te interesa más?",
+    shortcut: "precios",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "tpl-visit",
+    label: "Agendar visita",
+    body: "Perfecto {{nombre}}, podemos agendar una visita para que conozcas las unidades. Estamos disponibles de lunes a sábado de 9 a 18hs. ¿Qué día te queda mejor?",
+    shortcut: "visita",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "tpl-license",
+    label: "Solicitar licencia",
+    body: "Para avanzar necesito que me envíes foto de tu licencia de conducir vigente (frente y dorso). Es solo para verificar antigüedad. 🪪",
+    shortcut: "licencia",
+    createdAt: new Date().toISOString(),
+  },
+];
+
 interface StoreShape {
   contacts: Contact[];
+  templates?: MessageTemplate[];
 }
 
 class CrmStore {
   private contacts: Contact[] = [];
+  private templates: MessageTemplate[] = [];
   private initialized = false;
   private saveTimer: NodeJS.Timeout | null = null;
 
@@ -28,13 +61,15 @@ class CrmStore {
         const raw = await fs.readFile(STORE_FILE, "utf-8");
         const parsed = JSON.parse(raw) as StoreShape;
         this.contacts = parsed.contacts ?? [];
+        this.templates = parsed.templates ?? [...SEED_TEMPLATES];
       } catch {
         this.contacts = [...SEED_CONTACTS];
+        this.templates = [...SEED_TEMPLATES];
         await this.flush();
       }
     } else {
-      // First boot — seed with mock data so the UI has something to show
       this.contacts = [...SEED_CONTACTS];
+      this.templates = [...SEED_TEMPLATES];
       await this.flush();
     }
   }
@@ -45,7 +80,7 @@ class CrmStore {
   }
 
   private async flush() {
-    const payload: StoreShape = { contacts: this.contacts };
+    const payload: StoreShape = { contacts: this.contacts, templates: this.templates };
     await fs.writeFile(STORE_FILE, JSON.stringify(payload, null, 2));
   }
 
@@ -134,6 +169,71 @@ class CrmStore {
     this.scheduleSave();
     return msg;
   }
+
+  // ─── Templates ───────────────────────────────────────────────
+
+  listTemplates(): MessageTemplate[] {
+    return this.templates;
+  }
+
+  addTemplate(input: { label: string; body: string; shortcut?: string }): MessageTemplate {
+    const tpl: MessageTemplate = {
+      id: `tpl-${randomUUID().slice(0, 8)}`,
+      label: input.label.trim(),
+      body: input.body,
+      shortcut: input.shortcut?.trim() || undefined,
+      createdAt: new Date().toISOString(),
+    };
+    this.templates.push(tpl);
+    this.scheduleSave();
+    return tpl;
+  }
+
+  updateTemplate(id: string, patch: Partial<Pick<MessageTemplate, "label" | "body" | "shortcut">>): MessageTemplate | undefined {
+    const tpl = this.templates.find((t) => t.id === id);
+    if (!tpl) return undefined;
+    if (patch.label !== undefined) tpl.label = patch.label.trim();
+    if (patch.body !== undefined) tpl.body = patch.body;
+    if (patch.shortcut !== undefined) tpl.shortcut = patch.shortcut.trim() || undefined;
+    this.scheduleSave();
+    return tpl;
+  }
+
+  deleteTemplate(id: string): boolean {
+    const idx = this.templates.findIndex((t) => t.id === id);
+    if (idx === -1) return false;
+    this.templates.splice(idx, 1);
+    this.scheduleSave();
+    return true;
+  }
+
+  // ─── Notes ───────────────────────────────────────────────────
+
+  addNote(contactId: string, content: string, authorId: string): Note | null {
+    const contact = this.get(contactId);
+    if (!contact) return null;
+    const note: Note = {
+      id: `n-${randomUUID().slice(0, 8)}`,
+      content: content.trim(),
+      createdAt: new Date().toISOString(),
+      authorId,
+    };
+    contact.notes.push(note);
+    this.scheduleSave();
+    return note;
+  }
+
+  deleteNote(contactId: string, noteId: string): boolean {
+    const contact = this.get(contactId);
+    if (!contact) return false;
+    const idx = contact.notes.findIndex((n) => n.id === noteId);
+    if (idx === -1) return false;
+    contact.notes.splice(idx, 1);
+    this.scheduleSave();
+    return true;
+  }
+
+  // ─── Contact patch (existing) ────────────────────────────────
 
   patch(id: string, patch: Partial<Pick<Contact, "assignedAgentId" | "status" | "tagIds" | "vehicleInterest" | "licenseVerified" | "lineId">>): Contact | undefined {
     const contact = this.get(id);

@@ -18,6 +18,14 @@ export type WhatsAppStatus = "connected" | "disconnected" | "pending";
 
 export type UserRole = "admin" | "agente";
 
+export interface MessageTemplate {
+  id: string;
+  label: string;
+  body: string;
+  shortcut?: string;
+  createdAt: string;
+}
+
 export interface Agent {
   id: string;
   name: string;

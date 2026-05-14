@@ -7,6 +7,7 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
   "/contactos": { title: "Contactos", subtitle: "Gestión de leads y clientes" },
   "/conversaciones": { title: "Conversaciones", subtitle: "Bandeja de entrada del equipo" },
   "/clientes-potenciales": { title: "Clientes potenciales", subtitle: "Pipeline de ventas por WhatsApp" },
+  "/plantillas": { title: "Plantillas", subtitle: "Respuestas rápidas para el composer" },
   "/usuarios": { title: "Usuarios", subtitle: "Administradores y agentes del CRM" },
   "/lineas": { title: "Líneas WhatsApp", subtitle: "Conexión de números vía Baileys" },
 };

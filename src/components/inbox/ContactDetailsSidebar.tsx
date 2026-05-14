@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { Contact } from "@/types";
+import { useState, useEffect } from "react";
+import type { Contact, Note } from "@/types";
 import { useAgents } from "@/store/agents-store";
 import { TAGS } from "@/mock/tags";
 import { cn } from "@/lib/utils";
@@ -335,6 +335,8 @@ export default function ContactDetailsSidebar({ contact, onClose, onChangeAgent 
           </FieldRow>
         </Section>
 
+        <NotesSection contactId={contact.id} initialNotes={contact.notes} />
+
         <Section title="Información adicional" defaultOpen={false}>
           <FieldRow label="ID del contacto">
             <p className="text-xs text-slate-500 font-mono">{contact.id}</p>
@@ -345,5 +347,91 @@ export default function ContactDetailsSidebar({ contact, onClose, onChangeAgent 
         </Section>
       </div>
     </aside>
+  );
+}
+
+function NotesSection({ contactId, initialNotes }: { contactId: string; initialNotes: Note[] }) {
+  const { agents, currentUser } = useAgents();
+  const [notes, setNotes] = useState<Note[]>(initialNotes);
+  const [newNote, setNewNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Re-sync when the contact (and thus initialNotes) changes
+  useEffect(() => {
+    setNotes(initialNotes);
+  }, [initialNotes, contactId]);
+
+  async function handleSave() {
+    if (!newNote.trim() || !currentUser) return;
+    setSaving(true);
+    const optimistic: Note = {
+      id: `tmp-${Date.now()}`,
+      content: newNote.trim(),
+      createdAt: new Date().toISOString(),
+      authorId: currentUser.id,
+    };
+    setNotes((list) => [...list, optimistic]);
+    setNewNote("");
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: optimistic.content, authorId: currentUser.id }),
+      });
+      const data = await res.json();
+      if (data.note) {
+        setNotes((list) => list.map((n) => (n.id === optimistic.id ? data.note : n)));
+      }
+    } catch {
+      // rollback
+      setNotes((list) => list.filter((n) => n.id !== optimistic.id));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Section title={`Notas internas (${notes.length})`} defaultOpen>
+      <div className="space-y-2 mb-3">
+        {notes.length === 0 ? (
+          <p className="text-xs text-slate-400 py-2">Aún no hay notas</p>
+        ) : (
+          notes.map((note) => {
+            const author = agents.find((a) => a.id === note.authorId);
+            return (
+              <div key={note.id} className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                <p className="text-xs text-slate-800 whitespace-pre-wrap">{note.content}</p>
+                <div className="flex items-center gap-1 mt-1.5 text-[10px] text-slate-500">
+                  {author && (
+                    <>
+                      <div className={cn("w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-bold text-white", author.color)}>
+                        {author.avatarInitials}
+                      </div>
+                      <span>{author.name}</span>
+                      <span>·</span>
+                    </>
+                  )}
+                  <span>{new Date(note.createdAt).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+      <textarea
+        value={newNote}
+        onChange={(e) => setNewNote(e.target.value)}
+        placeholder="Añadir nota interna…"
+        rows={2}
+        className="w-full text-xs border border-slate-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
+      />
+      <button
+        onClick={handleSave}
+        disabled={!newNote.trim() || saving}
+        className="mt-1.5 w-full px-3 py-1.5 bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
+      >
+        {saving ? "Guardando…" : "Guardar nota"}
+      </button>
+    </Section>
   );
 }

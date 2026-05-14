@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import type { Contact } from "@/types";
 import { cn } from "@/lib/utils";
 import { useAgents } from "@/store/agents-store";
+import TemplatePicker from "./TemplatePicker";
 
 interface Props {
   contact: Contact;
@@ -292,11 +293,10 @@ export default function ChatThread({ contact, starred, onToggleStar, onSendMessa
             rows={1}
             className="flex-1 resize-none text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg shrink-0">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </button>
+          <TemplatePicker
+            contactName={contact.name}
+            onInsert={(text) => setComposer((prev) => (prev ? prev + "\n" + text : text))}
+          />
           <button
             disabled={!composer.trim()}
             onClick={handleSend}

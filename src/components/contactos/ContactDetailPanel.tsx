@@ -17,7 +17,33 @@ type TabId = "historial" | "notas" | "datos";
 export default function ContactDetailPanel({ contact, onClose }: Props) {
   const [tab, setTab] = useState<TabId>("historial");
   const [newNote, setNewNote] = useState("");
-  const { agents: AGENTS } = useAgents();
+  const [savingNote, setSavingNote] = useState(false);
+  const { agents: AGENTS, currentUser } = useAgents();
+
+  async function handleSaveNote() {
+    if (!newNote.trim() || !currentUser) return;
+    setSavingNote(true);
+    try {
+      await fetch(`/api/contacts/${contact.id}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: newNote.trim(), authorId: currentUser.id }),
+      });
+      setNewNote("");
+      // Force parent re-fetch by reloading the page section is not ideal; we rely on poll cycle.
+      // For immediate feedback, we mutate the local contact object so the user sees it instantly.
+      contact.notes.push({
+        id: `tmp-${Date.now()}`,
+        content: newNote.trim(),
+        createdAt: new Date().toISOString(),
+        authorId: currentUser.id,
+      });
+    } catch {
+      /* silent */
+    } finally {
+      setSavingNote(false);
+    }
+  }
 
   const agent = AGENTS.find((a) => a.id === contact.assignedAgentId);
   const tags = TAGS.filter((t) => contact.tagIds.includes(t.id));
@@ -153,11 +179,11 @@ export default function ContactDetailPanel({ contact, onClose }: Props) {
                 className="w-full text-sm border border-slate-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
               />
               <button
-                onClick={() => setNewNote("")}
-                disabled={!newNote.trim()}
+                onClick={handleSaveNote}
+                disabled={!newNote.trim() || savingNote}
                 className="mt-2 px-4 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
               >
-                Guardar nota
+                {savingNote ? "Guardando…" : "Guardar nota"}
               </button>
             </div>
           </div>
