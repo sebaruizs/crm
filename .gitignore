@@ -4,3 +4,5 @@ out
 baileys-sessions
 .DS_Store
 *.log
+tsconfig.tsbuildinfo
+next-env.d.ts
