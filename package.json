@@ -7,6 +7,9 @@
     "build": "next build",
     "start": "next start"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@hello-pangea/dnd": "^16.6.0",
