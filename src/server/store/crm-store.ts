@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { Contact, MessagePreview, MessageTemplate, Note, AutomationSettings } from "@/types";
 import { CONTACTS as SEED_CONTACTS } from "@/mock/contacts";
+import { notificationsStore } from "@/server/store/notifications-store";
 
 const STORE_DIR = path.join(process.cwd(), "baileys-sessions");
 const STORE_FILE = path.join(STORE_DIR, "crm.json");
@@ -185,6 +186,21 @@ class CrmStore {
     }
     contact.lastMessageAt = newMsg.sentAt;
     this.scheduleSave();
+
+    // Notify the assigned agent on incoming message (only for existing contacts;
+    // brand-new contacts get their notification via auto_assignment instead)
+    if (!isNew && contact.assignedAgentId) {
+      notificationsStore.init().then(() => {
+        notificationsStore.push({
+          recipientUserId: contact!.assignedAgentId!,
+          type: "new_message",
+          contactId: contact!.id,
+          contactName: contact!.name,
+          body: body.length > 80 ? body.slice(0, 80) + "…" : body,
+        });
+      }).catch(() => {});
+    }
+
     return { contact, isNew };
   }
 
@@ -308,6 +324,17 @@ class CrmStore {
     if (chosen) {
       contact.assignedAgentId = chosen;
       this.scheduleSave();
+      const lastMsg = contact.messageHistory[contact.messageHistory.length - 1];
+      const preview = lastMsg?.body ?? "Sin mensajes todavía";
+      notificationsStore.init().then(() => {
+        notificationsStore.push({
+          recipientUserId: chosen!,
+          type: "auto_assignment",
+          contactId: contact.id,
+          contactName: contact.name,
+          body: preview.length > 80 ? preview.slice(0, 80) + "…" : preview,
+        });
+      }).catch(() => {});
     }
     return chosen;
   }
@@ -317,6 +344,7 @@ class CrmStore {
   patch(id: string, patch: Partial<Pick<Contact, "assignedAgentId" | "status" | "tagIds" | "vehicleInterest" | "licenseVerified" | "lineId">>): Contact | undefined {
     const contact = this.get(id);
     if (!contact) return undefined;
+    const prevAssignee = contact.assignedAgentId;
     if (patch.assignedAgentId !== undefined) contact.assignedAgentId = patch.assignedAgentId || undefined;
     if (patch.status !== undefined) contact.status = patch.status;
     if (patch.tagIds !== undefined) contact.tagIds = patch.tagIds;
@@ -324,6 +352,29 @@ class CrmStore {
     if (patch.licenseVerified !== undefined) contact.licenseVerified = patch.licenseVerified;
     if (patch.lineId !== undefined) contact.lineId = patch.lineId;
     this.scheduleSave();
+
+    // If the assignee changed to a new (non-empty) agent, notify them
+    if (
+      patch.assignedAgentId !== undefined &&
+      contact.assignedAgentId &&
+      contact.assignedAgentId !== prevAssignee
+    ) {
+      const lastMsg = contact.messageHistory[contact.messageHistory.length - 1];
+      const preview = lastMsg?.body ?? "Sin mensajes todavía";
+      const newAssigneeId = contact.assignedAgentId;
+      const cid = contact.id;
+      const cname = contact.name;
+      notificationsStore.init().then(() => {
+        notificationsStore.push({
+          recipientUserId: newAssigneeId,
+          type: "new_assignment",
+          contactId: cid,
+          contactName: cname,
+          body: preview.length > 80 ? preview.slice(0, 80) + "…" : preview,
+        });
+      }).catch(() => {});
+    }
+
     return contact;
   }
 }

@@ -26,6 +26,19 @@ export interface MessageTemplate {
   createdAt: string;
 }
 
+export type NotificationType = "new_assignment" | "new_message" | "auto_assignment";
+
+export interface AppNotification {
+  id: string;
+  recipientUserId: string;
+  type: NotificationType;
+  contactId: string;
+  contactName: string;
+  body: string;
+  createdAt: string;
+  readAt: string | null;
+}
+
 export type AutoAssignStrategy = "round_robin" | "least_busy";
 
 export interface AutomationSettings {

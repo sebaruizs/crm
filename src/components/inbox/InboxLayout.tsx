@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import type { Contact, AutomationSettings } from "@/types";
 import { useAgents } from "@/store/agents-store";
 import ConversationList from "./ConversationList";
@@ -11,6 +12,7 @@ const POLL_MS = 3000;
 
 export default function InboxLayout() {
   const { currentUser, isAdmin } = useAgents();
+  const searchParams = useSearchParams();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
@@ -96,6 +98,22 @@ export default function InboxLayout() {
       setSelectedId(visibleContacts[0].id);
     }
   }, [visibleContacts, selectedId, loading]);
+
+  // Deep-link from notification: /conversaciones?contact=X
+  useEffect(() => {
+    const target = searchParams.get("contact");
+    if (!target || loading) return;
+    if (visibleContacts.some((c) => c.id === target)) {
+      setSelectedId(target);
+      // Clear unread for that contact
+      setUnreadMap((m) => {
+        if (!m[target]) return m;
+        const copy = { ...m };
+        delete copy[target];
+        return copy;
+      });
+    }
+  }, [searchParams, visibleContacts, loading]);
 
   const selected = visibleContacts.find((c) => c.id === selectedId) ?? null;
 
