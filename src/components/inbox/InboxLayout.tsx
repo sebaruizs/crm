@@ -1,28 +1,74 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import type { Contact, MessagePreview } from "@/types";
-import { CONTACTS } from "@/mock/contacts";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import type { Contact } from "@/types";
 import { useAgents } from "@/store/agents-store";
 import ConversationList from "./ConversationList";
 import ChatThread from "./ChatThread";
 import ContactDetailsSidebar from "./ContactDetailsSidebar";
 
-const INITIAL_UNREAD: Record<string, number> = {
-  c1: 3, c2: 3, c3: 3, c4: 1, c7: 2, c8: 3, c10: 3, c11: 15, c12: 1, c5: 3,
-};
+const POLL_MS = 3000;
 
 export default function InboxLayout() {
   const { currentUser, isAdmin } = useAgents();
-  const [contacts, setContacts] = useState<Contact[]>(CONTACTS);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [unreadMap, setUnreadMap] = useState<Record<string, number>>(INITIAL_UNREAD);
-  const [starredIds, setStarredIds] = useState<Set<string>>(new Set(["c3"]));
+  const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   const [detailsOpen, setDetailsOpen] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<string | null>(null);
 
-  // Visible conversations depend on role:
-  // - admin: sees all
-  // - agente: sees own + unassigned
+  // Track which messages we've already counted as unread to avoid double-counting
+  const seenMessageIds = useRef<Set<string>>(new Set());
+
+  const refreshContacts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/contacts", { cache: "no-store" });
+      const data = await res.json();
+      const fetched: Contact[] = data.contacts ?? [];
+
+      // Detect new inbound messages and bump unread counters
+      setContacts((prev) => {
+        const prevById = new Map(prev.map((c) => [c.id, c]));
+        for (const c of fetched) {
+          const previous = prevById.get(c.id);
+          for (const msg of c.messageHistory) {
+            if (msg.direction !== "inbound") continue;
+            if (seenMessageIds.current.has(msg.id)) continue;
+            seenMessageIds.current.add(msg.id);
+            // On first fetch we DON'T mark as unread (only seed)
+            if (previous && c.id !== selectedIdRef.current) {
+              setUnreadMap((m) => ({ ...m, [c.id]: (m[c.id] ?? 0) + 1 }));
+            } else if (!previous) {
+              // brand-new contact (first time we see them) — mark all inbound msgs as unread
+              setUnreadMap((m) => ({ ...m, [c.id]: (m[c.id] ?? 0) + 1 }));
+            }
+          }
+        }
+        return fetched;
+      });
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Keep a ref to selectedId so polling can check without re-creating refresh
+  const selectedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  // Initial fetch + polling
+  useEffect(() => {
+    refreshContacts();
+    const t = setInterval(refreshContacts, POLL_MS);
+    return () => clearInterval(t);
+  }, [refreshContacts]);
+
+  // Visibility filter (admin sees all, agent sees own + unassigned)
   const visibleContacts = useMemo(() => {
     if (isAdmin) return contacts;
     return contacts.filter(
@@ -30,14 +76,15 @@ export default function InboxLayout() {
     );
   }, [contacts, isAdmin, currentUser?.id]);
 
-  // If selected contact is no longer visible (e.g., switched user), clear selection
+  // Auto-select first visible if nothing selected (or selection became invisible)
   useEffect(() => {
+    if (loading) return;
     if (selectedId && !visibleContacts.some((c) => c.id === selectedId)) {
       setSelectedId(visibleContacts[0]?.id ?? null);
     } else if (!selectedId && visibleContacts.length > 0) {
       setSelectedId(visibleContacts[0].id);
     }
-  }, [visibleContacts, selectedId]);
+  }, [visibleContacts, selectedId, loading]);
 
   const selected = visibleContacts.find((c) => c.id === selectedId) ?? null;
 
@@ -61,34 +108,47 @@ export default function InboxLayout() {
     });
   }
 
-  function handleSendMessage(contactId: string, body: string) {
-    const trimmed = body.trim();
-    if (!trimmed) return;
-    const now = new Date().toISOString();
-    const newMsg: MessagePreview = {
-      id: `m-${Date.now()}`,
-      direction: "outbound",
-      body: trimmed,
-      sentAt: now,
-      status: "sent",
-    };
-    setContacts((list) =>
-      list.map((c) =>
-        c.id === contactId
-          ? { ...c, lastMessageAt: now, messageHistory: [...c.messageHistory, newMsg] }
-          : c
-      )
-    );
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4000);
   }
 
-  function handleChangeAgent(contactId: string, agentId: string | undefined) {
-    setContacts((list) =>
-      list.map((c) => (c.id === contactId ? { ...c, assignedAgentId: agentId } : c))
-    );
+  async function handleSendMessage(contactId: string, body: string) {
+    const trimmed = body.trim();
+    if (!trimmed) return;
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        showToast(`Error al enviar: ${data.error ?? "desconocido"}`);
+        return;
+      }
+      if (data.warning) showToast(data.warning);
+      await refreshContacts();
+    } catch (err) {
+      showToast(`Error de red: ${String(err)}`);
+    }
+  }
+
+  async function handleChangeAgent(contactId: string, agentId: string | undefined) {
+    try {
+      await fetch(`/api/contacts/${contactId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignedAgentId: agentId ?? null }),
+      });
+      await refreshContacts();
+    } catch {
+      showToast("Error al actualizar el agente");
+    }
   }
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="relative flex h-full overflow-hidden">
       <ConversationList
         contacts={visibleContacts}
         selectedId={selectedId}
@@ -97,7 +157,11 @@ export default function InboxLayout() {
         starredIds={starredIds}
       />
 
-      {selected ? (
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center text-slate-400 bg-slate-50">
+          <div className="w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : selected ? (
         <ChatThread
           contact={selected}
           starred={starredIds.has(selected.id)}
@@ -122,6 +186,13 @@ export default function InboxLayout() {
           onClose={() => setDetailsOpen(false)}
           onChangeAgent={(agentId) => handleChangeAgent(selected.id, agentId)}
         />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50 max-w-md">
+          {toast}
+        </div>
       )}
     </div>
   );

@@ -72,6 +72,7 @@ export interface Contact {
   vehicleInterest?: string;
   licenseVerified: boolean;
   visitScheduledAt?: string;
+  lineId?: string; // which WhatsApp line this contact talks through
 }
 
 export type KanbanColumnId =

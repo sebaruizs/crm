@@ -14,6 +14,7 @@ import {
 } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import type { WhatsAppLine, InboundMessage, SendResult } from "./types";
+import { crmStore } from "@/server/store/crm-store";
 
 const SESSIONS_DIR = path.join(process.cwd(), "baileys-sessions");
 const META_FILE = path.join(SESSIONS_DIR, "lines.json");
@@ -133,6 +134,15 @@ class BaileysManager {
     }
   }
 
+  /** Returns the first connected line, or null if none. */
+  firstConnectedLine(): WhatsAppLine | null {
+    const sessions = Array.from(this.sessions.values());
+    for (const s of sessions) {
+      if (s.line.status === "connected") return s.line;
+    }
+    return null;
+  }
+
   private async startSocket(id: string) {
     const session = this.sessions.get(id);
     if (!session) return;
@@ -190,13 +200,15 @@ class BaileysManager {
       }
     });
 
-    sock.ev.on("messages.upsert", ({ messages, type }) => {
+    sock.ev.on("messages.upsert", async ({ messages, type }) => {
       if (type !== "notify") return;
+      await crmStore.init();
       for (const msg of messages) {
         if (msg.key.fromMe) continue;
         const remoteJid = msg.key.remoteJid;
         if (!remoteJid) continue;
         const isGroup = remoteJid.endsWith("@g.us");
+        if (isGroup) continue; // skip group chats for CRM ingestion
         const body =
           msg.message?.conversation ??
           msg.message?.extendedTextMessage?.text ??
@@ -205,6 +217,9 @@ class BaileysManager {
           "";
         if (!body) continue;
         const fromNumber = remoteJid.split("@")[0].split(":")[0];
+        const timestamp = Number(msg.messageTimestamp) * 1000 || Date.now();
+
+        // Keep raw inbox for the /lineas page
         this.inbox.push({
           id: msg.key.id ?? randomUUID(),
           lineId: id,
@@ -212,10 +227,20 @@ class BaileysManager {
           fromNumber,
           fromName: msg.pushName ?? undefined,
           body,
-          timestamp: Number(msg.messageTimestamp) * 1000 || Date.now(),
+          timestamp,
           isGroup,
         });
         if (this.inbox.length > MAX_INBOX) this.inbox.shift();
+
+        // Upsert into the CRM (creates contact if unknown, appends message)
+        crmStore.upsertFromInbound({
+          lineId: id,
+          fromNumber,
+          fromName: msg.pushName ?? undefined,
+          body,
+          timestamp,
+          messageId: msg.key.id ?? undefined,
+        });
       }
     });
   }

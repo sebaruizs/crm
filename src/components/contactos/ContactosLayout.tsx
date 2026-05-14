@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import type { ContactFilters } from "@/types";
-import { CONTACTS } from "@/mock/contacts";
+import { useState, useMemo, useEffect } from "react";
+import type { Contact, ContactFilters } from "@/types";
 import { useAgents } from "@/store/agents-store";
 import ContactsTable from "./ContactsTable";
 import ContactInfoDrawer from "./ContactInfoDrawer";
@@ -18,9 +17,22 @@ export default function ContactosLayout() {
   const { agents: AGENTS } = useAgents();
   const [filters, setFilters] = useState<ContactFilters>(DEFAULT_FILTERS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const res = await fetch("/api/contacts", { cache: "no-store" });
+      const data = await res.json();
+      if (!cancelled) setContacts(data.contacts ?? []);
+    }
+    load();
+    const t = setInterval(load, 5000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
 
   const filtered = useMemo(() => {
-    return CONTACTS.filter((c) => {
+    return contacts.filter((c) => {
       if (filters.search) {
         const q = filters.search.toLowerCase();
         if (!c.name.toLowerCase().includes(q) && !c.phone.includes(q)) return false;
@@ -32,7 +44,7 @@ export default function ContactosLayout() {
     });
   }, [filters]);
 
-  const selected = CONTACTS.find((c) => c.id === selectedId) ?? null;
+  const selected = contacts.find((c) => c.id === selectedId) ?? null;
 
   return (
     <div className="relative h-full flex flex-col bg-white">
@@ -91,7 +103,7 @@ export default function ContactosLayout() {
 
         <div className="flex-1" />
 
-        <span className="text-xs text-slate-500">{filtered.length} de {CONTACTS.length} contactos</span>
+        <span className="text-xs text-slate-500">{filtered.length} de {contacts.length} contactos</span>
 
         <button className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-medium rounded-lg transition-colors">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
