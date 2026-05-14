@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   await crmStore.init();
-  return NextResponse.json({ templates: crmStore.listTemplates() });
+  return NextResponse.json({ templates: await crmStore.listTemplates() });
 }
 
 export async function POST(req: NextRequest) {
@@ -16,6 +16,6 @@ export async function POST(req: NextRequest) {
   if (!label?.trim() || !text?.trim()) {
     return NextResponse.json({ error: "label y body requeridos" }, { status: 400 });
   }
-  const tpl = crmStore.addTemplate({ label, body: text, shortcut });
+  const tpl = await crmStore.addTemplate({ label, body: text, shortcut });
   return NextResponse.json({ template: tpl });
 }

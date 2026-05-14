@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  name           String
+  email          String   @unique
+  password       String
+  role           String
+  color          String
+  avatarInitials String
+  createdAt      DateTime @default(now())
+
+  contacts      Contact[]      @relation("AssignedAgent")
+  notes         Note[]
+  notifications Notification[]
+}
+
+model Contact {
+  id               String    @id @default(cuid())
+  name             String
+  phone            String
+  source           String
+  status           String
+  assignedAgentId  String?
+  assignedAgent    User?     @relation("AssignedAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  tagIds           String    @default("[]")
+  whatsAppStatus   String    @default("connected")
+  createdAt        DateTime  @default(now())
+  lastMessageAt    DateTime  @default(now())
+  vehicleInterest  String?
+  licenseVerified  Boolean   @default(false)
+  visitScheduledAt DateTime?
+  lineId           String?
+  customFields     String    @default("[]")
+
+  messages      Message[]
+  notes         Note[]
+  notifications Notification[]
+
+  @@index([phone])
+  @@index([status])
+  @@index([assignedAgentId])
+  @@index([lastMessageAt])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  direction String
+  body      String
+  sentAt    DateTime
+  status    String
+
+  @@index([contactId])
+  @@index([sentAt])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  content   String
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([contactId])
+}
+
+model Template {
+  id        String   @id @default(cuid())
+  label     String
+  body      String
+  shortcut  String?
+  createdAt DateTime @default(now())
+}
+
+model Settings {
+  id                 Int     @id @default(1)
+  welcomeEnabled     Boolean @default(false)
+  welcomeTemplateId  String?
+  inactivityHours    Int     @default(4)
+  autoAssignEnabled  Boolean @default(false)
+  autoAssignStrategy String  @default("least_busy")
+  autoAssignRoles    String  @default("[\"agente\"]")
+}
+
+model Notification {
+  id              String    @id @default(cuid())
+  recipientUserId String
+  recipient       User      @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+  type            String
+  contactId       String
+  contact         Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactName     String
+  body            String
+  createdAt       DateTime  @default(now())
+  readAt          DateTime?
+
+  @@index([recipientUserId])
+  @@index([readAt])
+  @@index([createdAt])
+}
+
+model Line {
+  id          String    @id
+  name        String
+  agentId     String?
+  status      String    @default("disconnected")
+  phoneNumber String?
+  lastError   String?
+  connectedAt DateTime?
+  createdAt   DateTime  @default(now())
+}

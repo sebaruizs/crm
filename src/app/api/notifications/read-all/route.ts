@@ -9,6 +9,6 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const userId = body.userId as string | undefined;
   if (!userId) return NextResponse.json({ error: "userId requerido" }, { status: 400 });
-  const updated = notificationsStore.markAllRead(userId);
+  const updated = await notificationsStore.markAllRead(userId);
   return NextResponse.json({ updated });
 }

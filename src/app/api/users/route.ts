@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   await usersStore.init();
-  return NextResponse.json({ users: usersStore.listPublic() });
+  return NextResponse.json({ users: await usersStore.listPublic() });
 }
 
 export async function POST(req: NextRequest) {
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   if (!password || password.length < 6) return NextResponse.json({ error: "password mínimo 6 caracteres" }, { status: 400 });
   if (role !== "admin" && role !== "agente") return NextResponse.json({ error: "rol inválido" }, { status: 400 });
   if (!color) return NextResponse.json({ error: "color requerido" }, { status: 400 });
-  const user = usersStore.create({ name, email, color, role, password, avatarInitials });
+  const user = await usersStore.create({ name, email, color, role: role as "admin" | "agente", password, avatarInitials });
   const { password: _p, ...publicUser } = user;
   return NextResponse.json({ user: publicUser });
 }

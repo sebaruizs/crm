@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   await crmStore.init();
-  const contact = crmStore.get(params.id);
+  const contact = await crmStore.get(params.id);
   if (!contact) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
   return NextResponse.json({ contact });
 }
@@ -14,7 +14,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   await crmStore.init();
   const body = await req.json().catch(() => ({}));
-  const contact = crmStore.patch(params.id, body);
+  const contact = await crmStore.patch(params.id, body);
   if (!contact) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
   return NextResponse.json({ contact });
 }

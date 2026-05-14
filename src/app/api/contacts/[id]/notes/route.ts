@@ -10,7 +10,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { content, authorId } = body as { content?: string; authorId?: string };
   if (!content?.trim()) return NextResponse.json({ error: "content requerido" }, { status: 400 });
   if (!authorId) return NextResponse.json({ error: "authorId requerido" }, { status: 400 });
-  const note = crmStore.addNote(params.id, content, authorId);
+  const note = await crmStore.addNote(params.id, content, authorId);
   if (!note) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
   return NextResponse.json({ note });
 }

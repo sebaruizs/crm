@@ -6,12 +6,12 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   await crmStore.init();
-  return NextResponse.json({ settings: crmStore.getSettings() });
+  return NextResponse.json({ settings: await crmStore.getSettings() });
 }
 
 export async function PATCH(req: NextRequest) {
   await crmStore.init();
   const body = await req.json().catch(() => ({}));
-  const next = crmStore.updateSettings(body);
+  const next = await crmStore.updateSettings(body);
   return NextResponse.json({ settings: next });
 }

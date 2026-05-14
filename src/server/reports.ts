@@ -70,8 +70,8 @@ export interface ReportsPayload {
 export async function computeReports(): Promise<ReportsPayload> {
   await crmStore.init();
   await usersStore.init();
-  const contacts = crmStore.list();
-  const users = usersStore.list();
+  const contacts = await crmStore.list();
+  const users = await usersStore.list();
   const now = Date.now();
 
   // ─── KPIs ────────────────────────────────────────────────────

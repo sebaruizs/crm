@@ -1,7 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ["@whiskeysockets/baileys", "pino"],
+    serverComponentsExternalPackages: [
+      "@whiskeysockets/baileys",
+      "pino",
+      "@prisma/client",
+      "prisma",
+    ],
   },
   webpack: (config) => {
     config.externals.push({

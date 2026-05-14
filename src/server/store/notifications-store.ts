@@ -1,134 +1,127 @@
 import "server-only";
-import path from "node:path";
-import fs from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { randomUUID } from "node:crypto";
 import type { AppNotification, NotificationType } from "@/types";
+import { prisma } from "@/lib/prisma";
+import { importLegacyJsonOnce } from "./migrate-from-json";
 
-const STORE_DIR = path.join(process.cwd(), "baileys-sessions");
-const STORE_FILE = path.join(STORE_DIR, "notifications.json");
 const MAX_PER_USER = 100;
 
-interface StoreShape {
-  notifications: AppNotification[];
+function toApp(r: {
+  id: string;
+  recipientUserId: string;
+  type: string;
+  contactId: string;
+  contactName: string;
+  body: string;
+  createdAt: Date;
+  readAt: Date | null;
+}): AppNotification {
+  return {
+    id: r.id,
+    recipientUserId: r.recipientUserId,
+    type: r.type as NotificationType,
+    contactId: r.contactId,
+    contactName: r.contactName,
+    body: r.body,
+    createdAt: r.createdAt.toISOString(),
+    readAt: r.readAt?.toISOString() ?? null,
+  };
 }
 
 class NotificationsStore {
-  private notifications: AppNotification[] = [];
   private initialized = false;
-  private saveTimer: NodeJS.Timeout | null = null;
 
   async init() {
     if (this.initialized) return;
     this.initialized = true;
-    await fs.mkdir(STORE_DIR, { recursive: true });
-    if (existsSync(STORE_FILE)) {
-      try {
-        const raw = await fs.readFile(STORE_FILE, "utf-8");
-        const parsed = JSON.parse(raw) as StoreShape;
-        this.notifications = parsed.notifications ?? [];
-      } catch {
-        this.notifications = [];
-      }
-    }
+    await importLegacyJsonOnce();
   }
 
-  private scheduleSave() {
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => this.flush().catch(() => {}), 200);
+  async listForUser(userId: string, limit = 50): Promise<AppNotification[]> {
+    const rows = await prisma.notification.findMany({
+      where: { recipientUserId: userId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+    return rows.map(toApp);
   }
 
-  private async flush() {
-    const payload: StoreShape = { notifications: this.notifications };
-    await fs.writeFile(STORE_FILE, JSON.stringify(payload, null, 2));
+  async unreadCountForUser(userId: string): Promise<number> {
+    return prisma.notification.count({
+      where: { recipientUserId: userId, readAt: null },
+    });
   }
 
-  /**
-   * Lists notifications for one user, most recent first.
-   */
-  listForUser(userId: string, limit = 50): AppNotification[] {
-    return this.notifications
-      .filter((n) => n.recipientUserId === userId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, limit);
-  }
-
-  unreadCountForUser(userId: string): number {
-    return this.notifications.filter((n) => n.recipientUserId === userId && !n.readAt).length;
-  }
-
-  /**
-   * Adds a notification, with light deduplication:
-   * if the latest UNREAD notification for the same user+contact+type already exists,
-   * we skip (to avoid spamming agents when a customer sends 5 messages in a row).
-   */
-  push(input: {
+  async push(input: {
     recipientUserId: string;
     type: NotificationType;
     contactId: string;
     contactName: string;
     body: string;
-  }): AppNotification | null {
-    const exists = this.notifications.find(
-      (n) =>
-        n.recipientUserId === input.recipientUserId &&
-        n.contactId === input.contactId &&
-        n.type === input.type &&
-        !n.readAt
-    );
-    if (exists) {
-      // Update body & timestamp to keep it fresh
-      exists.body = input.body;
-      exists.createdAt = new Date().toISOString();
-      this.scheduleSave();
-      return exists;
+  }): Promise<AppNotification | null> {
+    // Dedup: update existing unread of same (user, contact, type)
+    const existing = await prisma.notification.findFirst({
+      where: {
+        recipientUserId: input.recipientUserId,
+        contactId: input.contactId,
+        type: input.type,
+        readAt: null,
+      },
+    });
+    if (existing) {
+      const updated = await prisma.notification.update({
+        where: { id: existing.id },
+        data: { body: input.body, createdAt: new Date() },
+      });
+      return toApp(updated);
     }
-    const n: AppNotification = {
-      id: `n-${randomUUID().slice(0, 8)}`,
-      recipientUserId: input.recipientUserId,
-      type: input.type,
-      contactId: input.contactId,
-      contactName: input.contactName,
-      body: input.body,
-      createdAt: new Date().toISOString(),
-      readAt: null,
-    };
-    this.notifications.push(n);
+
+    const created = await prisma.notification.create({
+      data: {
+        recipientUserId: input.recipientUserId,
+        type: input.type,
+        contactId: input.contactId,
+        contactName: input.contactName,
+        body: input.body,
+      },
+    });
+
     // Cap per-user history
-    const forUser = this.notifications.filter((x) => x.recipientUserId === input.recipientUserId);
-    if (forUser.length > MAX_PER_USER) {
-      const toRemove = forUser.length - MAX_PER_USER;
-      const oldest = [...forUser]
-        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-        .slice(0, toRemove);
-      for (const old of oldest) {
-        const idx = this.notifications.indexOf(old);
-        if (idx !== -1) this.notifications.splice(idx, 1);
-      }
+    const userCount = await prisma.notification.count({
+      where: { recipientUserId: input.recipientUserId },
+    });
+    if (userCount > MAX_PER_USER) {
+      const oldest = await prisma.notification.findMany({
+        where: { recipientUserId: input.recipientUserId },
+        orderBy: { createdAt: "asc" },
+        take: userCount - MAX_PER_USER,
+        select: { id: true },
+      });
+      await prisma.notification.deleteMany({
+        where: { id: { in: oldest.map((o) => o.id) } },
+      });
     }
-    this.scheduleSave();
-    return n;
+
+    return toApp(created);
   }
 
-  markRead(notificationId: string, userId: string): AppNotification | null {
-    const n = this.notifications.find((x) => x.id === notificationId && x.recipientUserId === userId);
-    if (!n) return null;
-    if (!n.readAt) n.readAt = new Date().toISOString();
-    this.scheduleSave();
-    return n;
+  async markRead(notificationId: string, userId: string): Promise<AppNotification | null> {
+    const existing = await prisma.notification.findFirst({
+      where: { id: notificationId, recipientUserId: userId },
+    });
+    if (!existing) return null;
+    const updated = await prisma.notification.update({
+      where: { id: notificationId },
+      data: { readAt: existing.readAt ?? new Date() },
+    });
+    return toApp(updated);
   }
 
-  markAllRead(userId: string): number {
-    let updated = 0;
-    const now = new Date().toISOString();
-    for (const n of this.notifications) {
-      if (n.recipientUserId === userId && !n.readAt) {
-        n.readAt = now;
-        updated++;
-      }
-    }
-    if (updated > 0) this.scheduleSave();
-    return updated;
+  async markAllRead(userId: string): Promise<number> {
+    const result = await prisma.notification.updateMany({
+      where: { recipientUserId: userId, readAt: null },
+      data: { readAt: new Date() },
+    });
+    return result.count;
   }
 }
 

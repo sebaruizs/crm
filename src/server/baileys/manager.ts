@@ -16,9 +16,10 @@ import { Boom } from "@hapi/boom";
 import type { WhatsAppLine, InboundMessage, SendResult } from "./types";
 import { crmStore } from "@/server/store/crm-store";
 import { usersStore } from "@/server/store/users-store";
+import { prisma } from "@/lib/prisma";
+import { importLegacyJsonOnce } from "@/server/store/migrate-from-json";
 
 const SESSIONS_DIR = path.join(process.cwd(), "baileys-sessions");
-const META_FILE = path.join(SESSIONS_DIR, "lines.json");
 const MAX_INBOX = 200;
 
 interface Session {
@@ -36,6 +37,7 @@ class BaileysManager {
     if (this.initialized) return;
     this.initialized = true;
     await fs.mkdir(SESSIONS_DIR, { recursive: true });
+    await importLegacyJsonOnce();
     const lines = await this.loadMeta();
     for (const line of lines) {
       this.sessions.set(line.id, { line: { ...line, status: "disconnected", qr: undefined } });
@@ -48,20 +50,46 @@ class BaileysManager {
   }
 
   private async loadMeta(): Promise<WhatsAppLine[]> {
-    try {
-      const raw = await fs.readFile(META_FILE, "utf-8");
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
+    const rows = await prisma.line.findMany();
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      agentId: r.agentId ?? undefined,
+      status: r.status as WhatsAppLine["status"],
+      phoneNumber: r.phoneNumber ?? undefined,
+      lastError: r.lastError ?? undefined,
+      connectedAt: r.connectedAt?.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+    }));
   }
 
   private async saveMeta() {
-    const lines = Array.from(this.sessions.values()).map((s) => ({
-      ...s.line,
-      qr: undefined, // don't persist QR
-    }));
-    await fs.writeFile(META_FILE, JSON.stringify(lines, null, 2));
+    // Upsert each line currently in memory
+    const operations = Array.from(this.sessions.values()).map((s) => {
+      const line = s.line;
+      return prisma.line.upsert({
+        where: { id: line.id },
+        create: {
+          id: line.id,
+          name: line.name,
+          agentId: line.agentId,
+          status: line.status,
+          phoneNumber: line.phoneNumber,
+          lastError: line.lastError,
+          connectedAt: line.connectedAt ? new Date(line.connectedAt) : null,
+          createdAt: new Date(line.createdAt),
+        },
+        update: {
+          name: line.name,
+          agentId: line.agentId,
+          status: line.status,
+          phoneNumber: line.phoneNumber,
+          lastError: line.lastError,
+          connectedAt: line.connectedAt ? new Date(line.connectedAt) : null,
+        },
+      });
+    });
+    if (operations.length > 0) await prisma.$transaction(operations);
   }
 
   async createLine(name: string, agentId?: string): Promise<WhatsAppLine> {
@@ -118,7 +146,7 @@ class BaileysManager {
     this.sessions.delete(id);
     const authDir = path.join(SESSIONS_DIR, id);
     await fs.rm(authDir, { recursive: true, force: true });
-    await this.saveMeta();
+    await prisma.line.deleteMany({ where: { id } });
   }
 
   async send(lineId: string, toNumber: string, text: string): Promise<SendResult> {
@@ -234,7 +262,7 @@ class BaileysManager {
         if (this.inbox.length > MAX_INBOX) this.inbox.shift();
 
         // Upsert into the CRM (creates contact if unknown, appends message)
-        const { contact, isNew } = crmStore.upsertFromInbound({
+        const { contact, isNew } = await crmStore.upsertFromInbound({
           lineId: id,
           fromNumber,
           fromName: msg.pushName ?? undefined,
@@ -244,31 +272,26 @@ class BaileysManager {
         });
 
         // For brand-new contacts, run automations:
-        // (1) Auto-assign to an eligible agent
-        // (2) Fire welcome message if configured
         if (isNew) {
-          const settings = crmStore.getSettings();
+          const settings = await crmStore.getSettings();
 
-          // Auto-assignment
           if (settings.autoAssignEnabled) {
             await usersStore.init();
-            const eligible = usersStore
-              .list()
+            const usersList = await usersStore.list();
+            const eligible = usersList
               .filter((u) => settings.autoAssignRoles.includes(u.role))
               .map((u) => ({ id: u.id }));
-            crmStore.autoAssign(contact.id, eligible, settings.autoAssignStrategy);
+            await crmStore.autoAssign(contact.id, eligible, settings.autoAssignStrategy);
           }
 
-          // Welcome message
           if (settings.welcomeEnabled && settings.welcomeTemplateId) {
-            const tpl = crmStore.getTemplate(settings.welcomeTemplateId);
+            const tpl = await crmStore.getTemplate(settings.welcomeTemplateId);
             if (tpl) {
               const firstName = contact.name.split(" ")[0].replace(/^\+/, "");
               const text = tpl.body.replace(/\{\{nombre\}\}/g, firstName);
-              // Fire-and-forget; failures shouldn't block ingestion
-              this.send(id, fromNumber, text).then((res) => {
+              this.send(id, fromNumber, text).then(async (res) => {
                 if (res.ok) {
-                  crmStore.appendOutbound(contact.id, text, res.id);
+                  await crmStore.appendOutbound(contact.id, text, res.id);
                 }
               }).catch(() => {});
             }

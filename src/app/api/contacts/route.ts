@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   await crmStore.init();
-  return NextResponse.json({ contacts: crmStore.list() });
+  return NextResponse.json({ contacts: await crmStore.list() });
 }

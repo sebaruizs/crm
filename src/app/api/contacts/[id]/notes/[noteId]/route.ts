@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string; noteId: string } }) {
   await crmStore.init();
-  const ok = crmStore.deleteNote(params.id, params.noteId);
+  const ok = await crmStore.deleteNote(params.id, params.noteId);
   if (!ok) return NextResponse.json({ error: "Nota o contacto no encontrado" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

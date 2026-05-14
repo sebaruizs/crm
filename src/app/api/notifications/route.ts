@@ -8,8 +8,9 @@ export async function GET(req: NextRequest) {
   await notificationsStore.init();
   const userId = req.nextUrl.searchParams.get("userId");
   if (!userId) return NextResponse.json({ error: "userId requerido" }, { status: 400 });
-  return NextResponse.json({
-    notifications: notificationsStore.listForUser(userId),
-    unread: notificationsStore.unreadCountForUser(userId),
-  });
+  const [notifications, unread] = await Promise.all([
+    notificationsStore.listForUser(userId),
+    notificationsStore.unreadCountForUser(userId),
+  ]);
+  return NextResponse.json({ notifications, unread });
 }

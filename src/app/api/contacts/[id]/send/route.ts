@@ -13,17 +13,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const text = (body?.text as string | undefined)?.trim();
   if (!text) return NextResponse.json({ error: "text requerido" }, { status: 400 });
 
-  const contact = crmStore.get(params.id);
+  const contact = await crmStore.get(params.id);
   if (!contact) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
 
-  // Pick the line: contact's assigned line, else first connected line
   let lineId = contact.lineId;
   if (!lineId) {
     const line = baileys.firstConnectedLine();
     if (!line) {
-      // No connected line — record the message locally so the demo continues to work,
-      // but flag it so the UI can warn the user.
-      const msg = crmStore.appendOutbound(params.id, text);
+      const msg = await crmStore.appendOutbound(params.id, text);
       return NextResponse.json({
         ok: true,
         delivered: false,
@@ -32,7 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       });
     }
     lineId = line.id;
-    crmStore.patch(params.id, { lineId });
+    await crmStore.patch(params.id, { lineId });
   }
 
   const result = await baileys.send(lineId, contact.phone, text);
@@ -40,6 +37,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ ok: false, error: result.error }, { status: 502 });
   }
 
-  const msg = crmStore.appendOutbound(params.id, text, result.id);
+  const msg = await crmStore.appendOutbound(params.id, text, result.id);
   return NextResponse.json({ ok: true, delivered: true, message: msg });
 }
