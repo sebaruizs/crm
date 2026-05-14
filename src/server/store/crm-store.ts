@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import type { Contact, MessagePreview, MessageTemplate, Note } from "@/types";
+import type { Contact, MessagePreview, MessageTemplate, Note, AutomationSettings } from "@/types";
 import { CONTACTS as SEED_CONTACTS } from "@/mock/contacts";
 
 const STORE_DIR = path.join(process.cwd(), "baileys-sessions");
@@ -41,14 +41,22 @@ const SEED_TEMPLATES: MessageTemplate[] = [
   },
 ];
 
+const DEFAULT_SETTINGS: AutomationSettings = {
+  welcomeEnabled: false,
+  welcomeTemplateId: null,
+  inactivityHours: 4,
+};
+
 interface StoreShape {
   contacts: Contact[];
   templates?: MessageTemplate[];
+  settings?: AutomationSettings;
 }
 
 class CrmStore {
   private contacts: Contact[] = [];
   private templates: MessageTemplate[] = [];
+  private settings: AutomationSettings = { ...DEFAULT_SETTINGS };
   private initialized = false;
   private saveTimer: NodeJS.Timeout | null = null;
 
@@ -62,14 +70,17 @@ class CrmStore {
         const parsed = JSON.parse(raw) as StoreShape;
         this.contacts = parsed.contacts ?? [];
         this.templates = parsed.templates ?? [...SEED_TEMPLATES];
+        this.settings = { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) };
       } catch {
         this.contacts = [...SEED_CONTACTS];
         this.templates = [...SEED_TEMPLATES];
+        this.settings = { ...DEFAULT_SETTINGS };
         await this.flush();
       }
     } else {
       this.contacts = [...SEED_CONTACTS];
       this.templates = [...SEED_TEMPLATES];
+      this.settings = { ...DEFAULT_SETTINGS };
       await this.flush();
     }
   }
@@ -80,8 +91,28 @@ class CrmStore {
   }
 
   private async flush() {
-    const payload: StoreShape = { contacts: this.contacts, templates: this.templates };
+    const payload: StoreShape = {
+      contacts: this.contacts,
+      templates: this.templates,
+      settings: this.settings,
+    };
     await fs.writeFile(STORE_FILE, JSON.stringify(payload, null, 2));
+  }
+
+  // ─── Settings ────────────────────────────────────────────────
+
+  getSettings(): AutomationSettings {
+    return this.settings;
+  }
+
+  updateSettings(patch: Partial<AutomationSettings>): AutomationSettings {
+    this.settings = { ...this.settings, ...patch };
+    this.scheduleSave();
+    return this.settings;
+  }
+
+  getTemplate(id: string): MessageTemplate | undefined {
+    return this.templates.find((t) => t.id === id);
   }
 
   list(): Contact[] {
@@ -108,9 +139,10 @@ class CrmStore {
     body: string;
     timestamp: number;
     messageId?: string;
-  }): Contact {
+  }): { contact: Contact; isNew: boolean } {
     const { lineId, fromNumber, fromName, body, timestamp, messageId } = params;
     let contact = this.findByPhone(fromNumber);
+    const isNew = !contact;
 
     if (!contact) {
       contact = {
@@ -150,7 +182,7 @@ class CrmStore {
     }
     contact.lastMessageAt = newMsg.sentAt;
     this.scheduleSave();
-    return contact;
+    return { contact, isNew };
   }
 
   appendOutbound(contactId: string, body: string, messageId?: string): MessagePreview | null {

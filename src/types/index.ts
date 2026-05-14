@@ -26,6 +26,12 @@ export interface MessageTemplate {
   createdAt: string;
 }
 
+export interface AutomationSettings {
+  welcomeEnabled: boolean;
+  welcomeTemplateId: string | null;
+  inactivityHours: number;
+}
+
 export interface Agent {
   id: string;
   name: string;

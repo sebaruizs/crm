@@ -233,7 +233,7 @@ class BaileysManager {
         if (this.inbox.length > MAX_INBOX) this.inbox.shift();
 
         // Upsert into the CRM (creates contact if unknown, appends message)
-        crmStore.upsertFromInbound({
+        const { contact, isNew } = crmStore.upsertFromInbound({
           lineId: id,
           fromNumber,
           fromName: msg.pushName ?? undefined,
@@ -241,6 +241,25 @@ class BaileysManager {
           timestamp,
           messageId: msg.key.id ?? undefined,
         });
+
+        // Fire welcome message if this is a brand-new contact and the
+        // admin has enabled the automation
+        if (isNew) {
+          const settings = crmStore.getSettings();
+          if (settings.welcomeEnabled && settings.welcomeTemplateId) {
+            const tpl = crmStore.getTemplate(settings.welcomeTemplateId);
+            if (tpl) {
+              const firstName = contact.name.split(" ")[0].replace(/^\+/, "");
+              const text = tpl.body.replace(/\{\{nombre\}\}/g, firstName);
+              // Fire-and-forget; failures shouldn't block ingestion
+              this.send(id, fromNumber, text).then((res) => {
+                if (res.ok) {
+                  crmStore.appendOutbound(contact.id, text, res.id);
+                }
+              }).catch(() => {});
+            }
+          }
+        }
       }
     });
   }

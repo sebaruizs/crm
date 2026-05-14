@@ -7,6 +7,7 @@ interface Props {
   unreadCount?: number;
   preview: string;
   starred?: boolean;
+  pending?: boolean;
   onClick: () => void;
 }
 
@@ -26,7 +27,7 @@ function avatarColor(id: string) {
   return AVATAR_COLORS[idx];
 }
 
-export default function ConversationListItem({ contact, selected, unreadCount, preview, starred, onClick }: Props) {
+export default function ConversationListItem({ contact, selected, unreadCount, preview, starred, pending, onClick }: Props) {
   const initials = contact.name.split(" ").map((w) => w[0]).slice(0, 2).join("");
   return (
     <button
@@ -51,6 +52,13 @@ export default function ConversationListItem({ contact, selected, unreadCount, p
         <div className="flex items-center justify-between gap-2 mb-0.5">
           <span className="text-sm font-semibold text-slate-900 truncate">{contact.name}</span>
           <div className="flex items-center gap-1.5 shrink-0">
+            {pending && (
+              <span title="Pendiente de respuesta">
+                <svg className="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </span>
+            )}
             <span className="text-xs text-slate-400">{formatRelativeTime(contact.lastMessageAt)}</span>
             {unreadCount ? (
               <span className="w-5 h-5 rounded-md bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center">

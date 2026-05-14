@@ -44,6 +44,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/automatizaciones",
+    label: "Automatizaciones",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+    adminOnly: true,
+  },
+  {
     href: "/plantillas",
     label: "Plantillas",
     icon: (

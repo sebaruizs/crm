@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import type { Contact } from "@/types";
+import type { Contact, AutomationSettings } from "@/types";
 import { useAgents } from "@/store/agents-store";
 import ConversationList from "./ConversationList";
 import ChatThread from "./ChatThread";
@@ -18,6 +18,17 @@ export default function InboxLayout() {
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const [inactivityHours, setInactivityHours] = useState(4);
+
+  // Fetch automation settings once on mount
+  useEffect(() => {
+    fetch("/api/settings", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { settings?: AutomationSettings }) => {
+        if (d.settings?.inactivityHours) setInactivityHours(d.settings.inactivityHours);
+      })
+      .catch(() => {});
+  }, []);
 
   // Track which messages we've already counted as unread to avoid double-counting
   const seenMessageIds = useRef<Set<string>>(new Set());
@@ -155,6 +166,7 @@ export default function InboxLayout() {
         onSelect={handleSelect}
         unreadMap={unreadMap}
         starredIds={starredIds}
+        inactivityHours={inactivityHours}
       />
 
       {loading ? (
