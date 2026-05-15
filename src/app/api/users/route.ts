@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { usersStore } from "@/server/store/users-store";
 import { withAuth, withAdmin } from "@/server/api-helpers";
+import { clientIp, logAudit } from "@/server/audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export const GET = withAuth(async () => {
   return NextResponse.json({ users: await usersStore.listPublic() });
 });
 
-export const POST = withAdmin(async (req) => {
+export const POST = withAdmin(async (req, _ctx, actor) => {
   await usersStore.init();
   const body = await req.json().catch(() => ({}));
   const { name, email, color, role, password, avatarInitials } = body as Record<string, string>;
@@ -20,6 +21,15 @@ export const POST = withAdmin(async (req) => {
   if (role !== "admin" && role !== "agente") return NextResponse.json({ error: "rol inválido" }, { status: 400 });
   if (!color) return NextResponse.json({ error: "color requerido" }, { status: 400 });
   const user = await usersStore.create({ name, email, color, role, password, avatarInitials });
+  logAudit({
+    actorId: actor.id,
+    actorName: actor.name,
+    action: "user.create",
+    targetType: "user",
+    targetId: user.id,
+    metadata: { email: user.email, role: user.role },
+    ipAddress: clientIp(req),
+  });
   const { password: _p, ...publicUser } = user;
   return NextResponse.json({ user: publicUser });
 });

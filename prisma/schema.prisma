@@ -23,6 +23,22 @@ model User {
   sessions      Session[]
 }
 
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?           // user that performed the action (null for anon/failed login)
+  actorName  String?           // denormalized for display when actor is deleted
+  action     String            // e.g. "login.success", "user.create", "settings.update"
+  targetType String?           // "user", "contact", "tag", etc.
+  targetId   String?
+  metadata   String   @default("{}") // arbitrary JSON context
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@index([action])
+}
+
 model Session {
   id        String   @id @default(cuid())
   token     String   @unique

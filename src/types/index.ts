@@ -97,6 +97,18 @@ export interface MessagePreview {
   mediaMime?: string;
 }
 
+export interface AuditEntry {
+  id: string;
+  actorId: string | null;
+  actorName: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  metadata: Record<string, unknown>;
+  ipAddress: string | null;
+  createdAt: string;
+}
+
 export type CustomFieldType = "text" | "number" | "date" | "select";
 
 export interface CustomFieldDefinition {

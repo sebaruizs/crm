@@ -13,6 +13,7 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
   "/etiquetas": { title: "Etiquetas", subtitle: "Categorizar contactos" },
   "/campos-personalizados": { title: "Campos personalizados", subtitle: "Datos extra para tus contactos" },
   "/usuarios": { title: "Usuarios", subtitle: "Administradores y agentes del CRM" },
+  "/auditoria": { title: "Auditoría", subtitle: "Registro de acciones sensibles" },
   "/lineas": { title: "Líneas WhatsApp", subtitle: "Conexión de números vía Baileys" },
 };
 

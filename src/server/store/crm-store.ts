@@ -31,32 +31,11 @@ const DEFAULT_SETTINGS: AutomationSettings = {
   chatbotClosing: "¡Gracias! Un agente te va a atender en breve. 🙌",
 };
 
-const SEED_TEMPLATES: { id: string; label: string; body: string; shortcut: string }[] = [
-  {
-    id: "tpl-welcome",
-    label: "Bienvenida",
-    body: "¡Hola {{nombre}}! 👋 Gracias por contactarnos. Soy del equipo de AutoFlota y te voy a ayudar a encontrar el vehículo ideal para que arranques a trabajar. ¿Para qué plataforma vas a manejar?",
-    shortcut: "bienvenida",
-  },
-  {
-    id: "tpl-pricing",
-    label: "Precios",
-    body: "Manejamos tres planes:\n\n• Semanal: $1,800 (incluye seguro y GPS)\n• Mensual: $6,500 (1 semana de gracia para arranque)\n• Anual: $65,000 (mejor precio)\n\nTodos incluyen mantenimiento. ¿Cuál te interesa más?",
-    shortcut: "precios",
-  },
-  {
-    id: "tpl-visit",
-    label: "Agendar visita",
-    body: "Perfecto {{nombre}}, podemos agendar una visita para que conozcas las unidades. Estamos disponibles de lunes a sábado de 9 a 18hs. ¿Qué día te queda mejor?",
-    shortcut: "visita",
-  },
-  {
-    id: "tpl-license",
-    label: "Solicitar licencia",
-    body: "Para avanzar necesito que me envíes foto de tu licencia de conducir vigente (frente y dorso). Es solo para verificar antigüedad. 🪪",
-    shortcut: "licencia",
-  },
-];
+/**
+ * Plantillas seed. Intencionalmente vacío para que un nuevo deploy empiece
+ * sin contenido pre-cargado. El admin crea las plantillas desde /plantillas.
+ */
+const SEED_TEMPLATES: { id: string; label: string; body: string; shortcut: string }[] = [];
 
 // Type helpers for Prisma rows → app types
 

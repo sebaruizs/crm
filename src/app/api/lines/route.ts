@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { baileys } from "@/server/baileys/manager";
 import { withAuth, withAdmin } from "@/server/api-helpers";
+import { clientIp, logAudit } from "@/server/audit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,12 +11,21 @@ export const GET = withAuth(async () => {
   return NextResponse.json({ lines: baileys.listLines() });
 });
 
-export const POST = withAdmin(async (req) => {
+export const POST = withAdmin(async (req, _ctx, actor) => {
   const body = await req.json().catch(() => ({}));
   const { name, agentId } = body as { name?: string; agentId?: string };
   if (!name || !name.trim()) {
     return NextResponse.json({ error: "name requerido" }, { status: 400 });
   }
   const line = await baileys.createLine(name.trim(), agentId);
+  logAudit({
+    actorId: actor.id,
+    actorName: actor.name,
+    action: "line.create",
+    targetType: "line",
+    targetId: line.id,
+    metadata: { name: line.name, agentId },
+    ipAddress: clientIp(req),
+  });
   return NextResponse.json({ line });
 });

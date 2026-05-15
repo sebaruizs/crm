@@ -1,40 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Edge middleware — runs before any route. We can't validate the session
- * token against the DB here (Prisma doesn't run on Edge), but we can do
- * a cheap presence check on the cookie. The actual DB validation happens
- * server-side in each API route via requireAuth(), so this layer is just
- * about UX (redirect unauth'd users to /login instead of letting them see
- * a flash of the protected shell).
+ * Edge middleware. Two responsibilities:
+ *   1) Light auth gate: redirect to /login if no session cookie (UX only;
+ *      real validation happens in each API route via requireAuth()).
+ *   2) Security headers on every HTML response.
  */
 
 const PUBLIC_PAGE_PREFIXES = ["/login", "/_next", "/favicon"];
 const SESSION_COOKIE = "crm.session";
 
+function applySecurityHeaders(res: NextResponse): NextResponse {
+  // Prevent the page from being embedded in iframes (clickjacking)
+  res.headers.set("X-Frame-Options", "DENY");
+  // Force browsers to honor the declared MIME type
+  res.headers.set("X-Content-Type-Options", "nosniff");
+  // Only send referrer to same origin
+  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  // Lock down browser features we don't use
+  res.headers.set(
+    "Permissions-Policy",
+    "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+  );
+  // HSTS only meaningful over HTTPS; harmless when stripped
+  res.headers.set("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+  return res;
+}
+
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Skip public pages and Next internals
-  if (PUBLIC_PAGE_PREFIXES.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
+  // API routes: auth is handled per-route. Don't redirect, but still add
+  // security headers to the response.
+  if (pathname.startsWith("/api/")) {
+    return applySecurityHeaders(NextResponse.next());
   }
 
-  // Skip API routes — they handle auth themselves via requireAuth()
-  if (pathname.startsWith("/api/")) {
-    return NextResponse.next();
+  // Public assets and login page
+  if (PUBLIC_PAGE_PREFIXES.some((p) => pathname.startsWith(p))) {
+    return applySecurityHeaders(NextResponse.next());
   }
 
   const sessionCookie = req.cookies.get(SESSION_COOKIE);
   if (!sessionCookie) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
-    // Preserve where the user wanted to go
     if (pathname !== "/") url.searchParams.set("from", pathname);
-    return NextResponse.redirect(url);
+    return applySecurityHeaders(NextResponse.redirect(url));
   }
 
-  return NextResponse.next();
+  return applySecurityHeaders(NextResponse.next());
 }
 
 export const config = {
