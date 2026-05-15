@@ -116,7 +116,7 @@ export default function UserFormModal({ open, agent, onClose }: Props) {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Ej. Sofía Ramírez"
+                placeholder="Ej. Juan Pérez"
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
             </div>

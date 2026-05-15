@@ -382,88 +382,115 @@ function Toggle({
 }
 
 function DangerZone({ onToast }: { onToast: (msg: string) => void }) {
-  const { currentUser } = useAgents();
-  const [open, setOpen] = useState(false);
+  const { currentUser, refreshAgents } = useAgents();
+  const [action, setAction] = useState<null | "wipe" | "reset">(null);
   const [confirmText, setConfirmText] = useState("");
-  const [wiping, setWiping] = useState(false);
+  const [working, setWorking] = useState(false);
 
-  async function handleWipe() {
-    if (!currentUser) return;
-    setWiping(true);
+  const expectedConfirm = action === "wipe" ? "BORRAR-DATOS" : "RESET-COMPLETO";
+  const endpoint = action === "wipe" ? "/api/admin/wipe" : "/api/admin/factory-reset";
+
+  async function handleExecute() {
+    if (!currentUser || !action) return;
+    setWorking(true);
     try {
-      const res = await fetch("/api/admin/wipe", {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: "BORRAR-DATOS" }),
+        body: JSON.stringify({ confirm: expectedConfirm }),
       });
       const data = await res.json();
       if (!res.ok) {
         onToast(`Error: ${data.error ?? "desconocido"}`);
-      } else {
+      } else if (action === "wipe") {
         onToast(`Listo: ${data.deleted.contacts} contactos y ${data.deleted.notifications} notificaciones eliminadas`);
-        setOpen(false);
-        setConfirmText("");
+      } else {
+        const d = data.deleted;
+        onToast(`Reset completo: ${d.contacts} contactos, ${d.templates} plantillas, ${d.tags} etiquetas, ${d.customFields} campos, ${d.lines} líneas, ${d.otherUsers} usuarios`);
+        await refreshAgents();
       }
+      setAction(null);
+      setConfirmText("");
     } catch {
       onToast("Error de red");
     } finally {
-      setWiping(false);
+      setWorking(false);
     }
   }
 
   return (
-    <div className="rounded-xl border-2 border-red-200 bg-red-50/50 p-5">
+    <div className="rounded-xl border-2 border-red-200 bg-red-50/50 p-5 space-y-4">
       <div className="flex items-start gap-3">
         <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
           <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
         </div>
-        <div className="flex-1">
+        <div>
           <h3 className="text-sm font-bold text-red-900">Zona peligrosa</h3>
-          <p className="text-xs text-red-800 mt-0.5 mb-3">
-            Elimina <strong>todos los contactos, mensajes, notas y notificaciones</strong> de la base de datos. Los usuarios, plantillas, settings y líneas de WhatsApp se mantienen. Acción irreversible.
-          </p>
-          {!open ? (
+          <p className="text-xs text-red-800 mt-0.5">Dos opciones de limpieza, irreversibles.</p>
+        </div>
+      </div>
+
+      {/* Option 1: Wipe data */}
+      <div className="bg-white rounded-lg border border-red-200 p-3">
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Eliminar conversaciones</p>
+            <p className="text-xs text-slate-600">
+              Borra contactos, mensajes, notas y notificaciones. Mantiene usuarios, plantillas, etiquetas, líneas y settings.
+            </p>
+          </div>
+          {action !== "wipe" && (
             <button
               type="button"
-              onClick={() => setOpen(true)}
-              className="text-xs font-medium text-red-700 bg-white border border-red-300 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
+              onClick={() => { setAction("wipe"); setConfirmText(""); }}
+              className="text-xs font-medium text-red-700 bg-white border border-red-300 hover:bg-red-100 px-3 py-1.5 rounded-lg whitespace-nowrap"
             >
-              Eliminar todos los datos
+              Eliminar datos
             </button>
-          ) : (
-            <div className="space-y-2 bg-white rounded-lg border border-red-300 p-3">
-              <p className="text-xs text-slate-700">
-                Para confirmar, escribí <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-red-700">BORRAR-DATOS</code> abajo:
-              </p>
-              <input
-                type="text"
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                placeholder="BORRAR-DATOS"
-                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
-              />
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setOpen(false); setConfirmText(""); }}
-                  className="text-xs px-3 py-1.5 rounded-lg hover:bg-slate-100"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleWipe}
-                  disabled={confirmText !== "BORRAR-DATOS" || wiping}
-                  className="text-xs font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg transition-colors"
-                >
-                  {wiping ? "Borrando…" : "Confirmar y borrar"}
-                </button>
-              </div>
-            </div>
           )}
         </div>
+        {action === "wipe" && <ConfirmInline
+          expected={expectedConfirm}
+          confirmText={confirmText}
+          setConfirmText={setConfirmText}
+          onCancel={() => { setAction(null); setConfirmText(""); }}
+          onConfirm={handleExecute}
+          working={working}
+          buttonLabel="Confirmar y borrar"
+        />}
+      </div>
+
+      {/* Option 2: Factory reset */}
+      <div className="bg-white rounded-lg border border-red-300 p-3">
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Reset completo de fábrica</p>
+            <p className="text-xs text-slate-600">
+              Borra <strong>todo</strong>: contactos, mensajes, plantillas, etiquetas, campos personalizados, líneas, otros usuarios, settings reset. Solo queda tu usuario actual.
+            </p>
+          </div>
+          {action !== "reset" && (
+            <button
+              type="button"
+              onClick={() => { setAction("reset"); setConfirmText(""); }}
+              className="text-xs font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg whitespace-nowrap"
+            >
+              Reset completo
+            </button>
+          )}
+        </div>
+        {action === "reset" && <ConfirmInline
+          expected={expectedConfirm}
+          confirmText={confirmText}
+          setConfirmText={setConfirmText}
+          onCancel={() => { setAction(null); setConfirmText(""); }}
+          onConfirm={handleExecute}
+          working={working}
+          buttonLabel="Sí, resetear todo"
+          variant="danger"
+        />}
       </div>
     </div>
   );
@@ -569,6 +596,61 @@ function ChatbotQuestionsEditor({
           rows={2}
           className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
         />
+      </div>
+    </div>
+  );
+}
+
+function ConfirmInline({
+  expected,
+  confirmText,
+  setConfirmText,
+  onCancel,
+  onConfirm,
+  working,
+  buttonLabel,
+  variant = "danger",
+}: {
+  expected: string;
+  confirmText: string;
+  setConfirmText: (v: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+  working: boolean;
+  buttonLabel: string;
+  variant?: "danger";
+}) {
+  return (
+    <div className="space-y-2 mt-2 pt-2 border-t border-slate-100">
+      <p className="text-xs text-slate-700">
+        Escribí <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-red-700">{expected}</code> para confirmar:
+      </p>
+      <input
+        type="text"
+        value={confirmText}
+        onChange={(e) => setConfirmText(e.target.value)}
+        placeholder={expected}
+        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-xs px-3 py-1.5 rounded-lg hover:bg-slate-100"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={confirmText !== expected || working}
+          className={cn(
+            "text-xs font-medium text-white px-3 py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed",
+            variant === "danger" ? "bg-red-600 hover:bg-red-700" : "bg-slate-600 hover:bg-slate-700"
+          )}
+        >
+          {working ? "Procesando…" : buttonLabel}
+        </button>
       </div>
     </div>
   );
