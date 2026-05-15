@@ -43,50 +43,61 @@ class UsersStore {
     // Safety net: ensure at least one admin exists. If the table has agents
     // but no admin (e.g. someone deleted all admin users), recreate the
     // bootstrap admin so the system stays accessible.
+    const bootstrapEmail = SEED_AGENTS[0]?.email ?? "admin@example.com";
+    const bootstrapName = SEED_AGENTS[0]?.name ?? "Administrador";
+    const bootstrapInitials = SEED_AGENTS[0]?.avatarInitials ?? "AD";
+    const bootstrapColor = SEED_AGENTS[0]?.color ?? "bg-violet-500";
+    const bootstrapPassword = SEED_AGENTS[0]?.password ?? "admin1234";
+
     const adminCount = await prisma.user.count({ where: { role: "admin" } });
     if (adminCount === 0) {
-      const bootstrapEmail = "admin@autoflota.mx";
       const existing = await prisma.user.findUnique({ where: { email: bootstrapEmail } });
       if (existing) {
         await prisma.user.update({
           where: { id: existing.id },
-          data: { role: "admin", password: await hashPassword("admin1234") },
+          data: {
+            role: "admin",
+            name: bootstrapName,
+            avatarInitials: bootstrapInitials,
+            password: await hashPassword(bootstrapPassword),
+          },
         });
       } else {
         await prisma.user.create({
           data: {
             id: "a-bootstrap",
-            name: "Administrador",
+            name: bootstrapName,
             email: bootstrapEmail,
-            password: await hashPassword("admin1234"),
+            password: await hashPassword(bootstrapPassword),
             role: "admin",
-            color: "bg-violet-500",
-            avatarInitials: "AD",
+            color: bootstrapColor,
+            avatarInitials: bootstrapInitials,
           },
         });
       }
-      console.warn(`[users-store] No admin found. Created/promoted bootstrap admin (${bootstrapEmail} / admin1234). CHANGE THE PASSWORD IMMEDIATELY.`);
+      console.warn(`[users-store] No admin found. Created/promoted bootstrap admin (${bootstrapEmail} / ${bootstrapPassword}). CHANGE THE PASSWORD IMMEDIATELY.`);
     }
 
     // Emergency password reset via env var. Useful when you're locked out
     // because nobody remembers a password. Set RESET_ADMIN_PASSWORD=true
     // in Easypanel env, restart, login, then UNSET the var.
     if (process.env.RESET_ADMIN_PASSWORD === "true") {
-      const bootstrapEmail = "admin@autoflota.mx";
       await prisma.user.upsert({
         where: { email: bootstrapEmail },
         create: {
           id: "a-bootstrap",
-          name: "Administrador",
+          name: bootstrapName,
           email: bootstrapEmail,
-          password: await hashPassword("admin1234"),
+          password: await hashPassword(bootstrapPassword),
           role: "admin",
-          color: "bg-violet-500",
-          avatarInitials: "AD",
+          color: bootstrapColor,
+          avatarInitials: bootstrapInitials,
         },
         update: {
           role: "admin",
-          password: await hashPassword("admin1234"),
+          name: bootstrapName,
+          avatarInitials: bootstrapInitials,
+          password: await hashPassword(bootstrapPassword),
         },
       });
       // Also clear sessions so any active intruder is logged out

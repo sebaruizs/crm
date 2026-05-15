@@ -176,11 +176,11 @@ export default function LoginForm() {
             </p>
             <div className="text-xs">
               <button
-                onClick={() => fillDemo("admin@autoflota.mx", "admin1234")}
+                onClick={() => fillDemo("admin@ridder.com.py", "admin1234")}
                 className="w-full text-left flex items-center justify-between px-2 py-1.5 rounded hover:bg-white transition-colors"
               >
                 <span className="text-slate-700">
-                  <span className="font-mono">admin@autoflota.mx</span> / <span className="font-mono">admin1234</span>
+                  <span className="font-mono">admin@ridder.com.py</span> / <span className="font-mono">admin1234</span>
                 </span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">Admin</span>
               </button>

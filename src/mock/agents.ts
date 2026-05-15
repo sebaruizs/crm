@@ -8,7 +8,7 @@ import type { Agent } from "@/types";
  * Usuarios page once you log in.
  *
  * Default credentials:
- *   email:    admin@autoflota.mx
+ *   email:    admin@ridder.com.py
  *   password: admin1234
  *
  * Change the password immediately after the first login.
@@ -16,10 +16,10 @@ import type { Agent } from "@/types";
 export const AGENTS: Agent[] = [
   {
     id: "a-bootstrap",
-    name: "Administrador",
-    avatarInitials: "AD",
+    name: "Sebastian Ruiz",
+    avatarInitials: "SR",
     color: "bg-violet-500",
-    email: "admin@autoflota.mx",
+    email: "admin@ridder.com.py",
     role: "admin",
     password: "admin1234",
   },
