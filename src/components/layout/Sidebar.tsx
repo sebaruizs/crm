@@ -64,6 +64,16 @@ const NAV_ITEMS = [
     adminOnly: true,
   },
   {
+    href: "/etiquetas",
+    label: "Etiquetas",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+      </svg>
+    ),
+    adminOnly: true,
+  },
+  {
     href: "/usuarios",
     label: "Usuarios",
     icon: (
@@ -85,7 +95,12 @@ const NAV_ITEMS = [
   },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  mobileOpen?: boolean;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { currentUser, isAdmin, logout } = useAgents();
@@ -100,7 +115,16 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex flex-col w-60 min-h-screen bg-slate-900 text-white shrink-0">
+    <aside
+      className={cn(
+        "flex flex-col w-60 bg-slate-900 text-white shrink-0",
+        // Desktop: always visible, in flow
+        "lg:relative lg:translate-x-0 lg:min-h-screen",
+        // Mobile: fixed drawer, slides in from left
+        "fixed inset-y-0 left-0 z-40 transition-transform duration-200 ease-out",
+        mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      )}
+    >
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-700">
         <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
@@ -122,6 +146,7 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => onClose?.()}
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                 active

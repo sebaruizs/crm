@@ -6,13 +6,19 @@ import { cn } from "@/lib/utils";
 import { useAgents } from "@/store/agents-store";
 import TemplatePicker from "./TemplatePicker";
 
+export interface SendPayload {
+  text: string;
+  file?: File;
+}
+
 interface Props {
   contact: Contact;
   starred: boolean;
   onToggleStar: () => void;
-  onSendMessage: (body: string) => void;
+  onSendMessage: (payload: SendPayload) => void;
   onOpenDetails: () => void;
   onChangeAgent: (agentId: string | undefined) => void;
+  onBack?: () => void;
 }
 
 function formatTime(iso: string) {
@@ -27,9 +33,11 @@ function dayLabel(iso: string) {
   return d.toLocaleDateString("es-MX", { day: "numeric", month: "long" });
 }
 
-export default function ChatThread({ contact, starred, onToggleStar, onSendMessage, onOpenDetails, onChangeAgent }: Props) {
+export default function ChatThread({ contact, starred, onToggleStar, onSendMessage, onOpenDetails, onChangeAgent, onBack }: Props) {
   const [composer, setComposer] = useState("");
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { agents, currentUser, isAdmin } = useAgents();
   const currentAgent = agents.find((a) => a.id === contact.assignedAgentId);
   const isUnassigned = !contact.assignedAgentId;
@@ -42,9 +50,11 @@ export default function ChatThread({ contact, starred, onToggleStar, onSendMessa
   const canSelfAssign = !isAdmin && isUnassigned;
 
   function handleSend() {
-    if (!composer.trim()) return;
-    onSendMessage(composer);
+    if (!composer.trim() && !pendingFile) return;
+    onSendMessage({ text: composer, file: pendingFile ?? undefined });
     setComposer("");
+    setPendingFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -74,8 +84,19 @@ export default function ChatThread({ contact, starred, onToggleStar, onSendMessa
     <div className="flex flex-col flex-1 min-w-0 bg-slate-50">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 bg-white border-b border-slate-200 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className={cn("w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold", avatarColor)}>
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="lg:hidden p-1.5 -ml-1 text-slate-600 hover:bg-slate-100 rounded-lg"
+              aria-label="Volver a la lista"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
+          <div className={cn("w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0", avatarColor)}>
             {initials}
           </div>
           <div>
@@ -254,13 +275,42 @@ export default function ChatThread({ contact, starred, onToggleStar, onSendMessa
                 <div className={cn("max-w-xl group flex flex-col", msg.direction === "outbound" && "items-end")}>
                   <div
                     className={cn(
-                      "rounded-2xl px-4 py-2.5 text-sm shadow-sm",
+                      "rounded-2xl text-sm shadow-sm overflow-hidden",
                       msg.direction === "outbound"
                         ? "bg-slate-200 text-slate-900 rounded-br-md"
                         : "bg-white border border-slate-200 text-slate-800 rounded-bl-md"
                     )}
                   >
-                    <p className="whitespace-pre-wrap leading-relaxed">{msg.body}</p>
+                    {msg.mediaType === "image" && msg.mediaUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer">
+                        <img src={msg.mediaUrl} alt="" className="max-w-xs max-h-80 object-cover" />
+                      </a>
+                    )}
+                    {msg.mediaType === "video" && msg.mediaUrl && (
+                      <video src={msg.mediaUrl} controls className="max-w-xs max-h-80" />
+                    )}
+                    {msg.mediaType === "audio" && msg.mediaUrl && (
+                      <audio src={msg.mediaUrl} controls className="px-3 py-2" />
+                    )}
+                    {msg.mediaType === "document" && msg.mediaUrl && (
+                      <a
+                        href={msg.mediaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 px-3 py-2 hover:bg-black/5"
+                      >
+                        <svg className="w-5 h-5 text-slate-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span className="text-xs font-medium truncate underline">
+                          {msg.mediaName ?? "Documento"}
+                        </span>
+                      </a>
+                    )}
+                    {msg.body && (
+                      <p className="whitespace-pre-wrap leading-relaxed px-4 py-2.5">{msg.body}</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400 px-1">
                     <span>{formatTime(msg.sentAt)}</span>
@@ -279,8 +329,49 @@ export default function ChatThread({ contact, starred, onToggleStar, onSendMessa
 
       {/* Composer */}
       <div className="border-t border-slate-200 bg-white p-3 shrink-0">
+        {pendingFile && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-slate-100 rounded-lg">
+            {pendingFile.type.startsWith("image/") ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={URL.createObjectURL(pendingFile)} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
+            ) : (
+              <div className="w-10 h-10 rounded bg-white border border-slate-200 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-slate-900 truncate">{pendingFile.name}</p>
+              <p className="text-[10px] text-slate-500">{(pendingFile.size / 1024).toFixed(1)} KB</p>
+            </div>
+            <button
+              onClick={() => { setPendingFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+              className="text-slate-400 hover:text-slate-600 p-1"
+              aria-label="Quitar archivo"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-2">
-          <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg shrink-0">
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) setPendingFile(f);
+            }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg shrink-0"
+            title="Adjuntar archivo"
+          >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
             </svg>
@@ -298,14 +389,14 @@ export default function ChatThread({ contact, starred, onToggleStar, onSendMessa
             onInsert={(text) => setComposer((prev) => (prev ? prev + "\n" + text : text))}
           />
           <button
-            disabled={!composer.trim()}
+            disabled={!composer.trim() && !pendingFile}
             onClick={handleSend}
-            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5"
+            className="px-3 sm:px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
             </svg>
-            Enviar
+            <span className="hidden sm:inline">Enviar</span>
           </button>
         </div>
       </div>

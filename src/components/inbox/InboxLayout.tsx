@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import type { Contact, AutomationSettings } from "@/types";
 import { useAgents } from "@/store/agents-store";
+import { cn } from "@/lib/utils";
 import ConversationList from "./ConversationList";
 import ChatThread from "./ChatThread";
 import ContactDetailsSidebar from "./ContactDetailsSidebar";
@@ -142,14 +143,32 @@ export default function InboxLayout() {
     setTimeout(() => setToast(null), 4000);
   }
 
-  async function handleSendMessage(contactId: string, body: string) {
-    const trimmed = body.trim();
-    if (!trimmed) return;
+  async function handleSendMessage(contactId: string, payload: { text: string; file?: File }) {
+    const trimmed = payload.text.trim();
+    if (!trimmed && !payload.file) return;
     try {
+      let mediaPayload: { fileId: string; url: string; name?: string; mime?: string } | undefined;
+      if (payload.file) {
+        const form = new FormData();
+        form.append("file", payload.file);
+        const upRes = await fetch("/api/files/upload", { method: "POST", body: form });
+        const upData = await upRes.json();
+        if (!upRes.ok) {
+          showToast(`Error al subir archivo: ${upData.error ?? "desconocido"}`);
+          return;
+        }
+        mediaPayload = {
+          fileId: upData.id,
+          url: upData.url,
+          name: upData.name,
+          mime: upData.mime,
+        };
+      }
+
       const res = await fetch(`/api/contacts/${contactId}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: trimmed }),
+        body: JSON.stringify({ text: trimmed, media: mediaPayload }),
       });
       const data = await res.json();
       if (!res.ok || data.ok === false) {
@@ -176,32 +195,49 @@ export default function InboxLayout() {
     }
   }
 
+  // Mobile UX: when a contact is selected, show the chat (full screen).
+  // No selection → show the conversation list.
+  const showListOnMobile = !selectedId;
+  const showChatOnMobile = !!selectedId && !detailsOpen;
+  const showDetailsOnMobile = !!selectedId && detailsOpen;
+
   return (
     <div className="relative flex h-full overflow-hidden">
-      <ConversationList
-        contacts={visibleContacts}
-        selectedId={selectedId}
-        onSelect={handleSelect}
-        unreadMap={unreadMap}
-        starredIds={starredIds}
-        inactivityHours={inactivityHours}
-      />
+      <div className={cn(
+        "lg:flex",
+        showListOnMobile ? "flex w-full lg:w-auto" : "hidden lg:flex"
+      )}>
+        <ConversationList
+          contacts={visibleContacts}
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          unreadMap={unreadMap}
+          starredIds={starredIds}
+          inactivityHours={inactivityHours}
+        />
+      </div>
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center text-slate-400 bg-slate-50">
           <div className="w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : selected ? (
-        <ChatThread
-          contact={selected}
-          starred={starredIds.has(selected.id)}
-          onToggleStar={() => toggleStar(selected.id)}
-          onSendMessage={(body) => handleSendMessage(selected.id, body)}
-          onOpenDetails={() => setDetailsOpen(true)}
-          onChangeAgent={(agentId) => handleChangeAgent(selected.id, agentId)}
-        />
+        <div className={cn(
+          "flex-1 min-w-0",
+          showChatOnMobile ? "flex" : "hidden lg:flex"
+        )}>
+          <ChatThread
+            contact={selected}
+            starred={starredIds.has(selected.id)}
+            onToggleStar={() => toggleStar(selected.id)}
+            onSendMessage={(payload) => handleSendMessage(selected.id, payload)}
+            onOpenDetails={() => setDetailsOpen(true)}
+            onChangeAgent={(agentId) => handleChangeAgent(selected.id, agentId)}
+            onBack={() => setSelectedId(null)}
+          />
+        </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-slate-400 bg-slate-50">
+        <div className="flex-1 hidden lg:flex items-center justify-center text-slate-400 bg-slate-50">
           <p className="text-sm">
             {visibleContacts.length === 0
               ? "No tienes conversaciones asignadas ni libres por ahora"
@@ -211,11 +247,15 @@ export default function InboxLayout() {
       )}
 
       {selected && detailsOpen && (
-        <ContactDetailsSidebar
-          contact={selected}
-          onClose={() => setDetailsOpen(false)}
-          onChangeAgent={(agentId) => handleChangeAgent(selected.id, agentId)}
-        />
+        <div className={cn(
+          showDetailsOnMobile ? "flex w-full lg:w-auto" : "hidden lg:flex"
+        )}>
+          <ContactDetailsSidebar
+            contact={selected}
+            onClose={() => setDetailsOpen(false)}
+            onChangeAgent={(agentId) => handleChangeAgent(selected.id, agentId)}
+          />
+        </div>
       )}
 
       {/* Toast */}

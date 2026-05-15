@@ -24,6 +24,9 @@ const DEFAULT_SETTINGS: AutomationSettings = {
   autoAssignEnabled: false,
   autoAssignStrategy: "least_busy",
   autoAssignRoles: ["agente"],
+  chatbotEnabled: false,
+  chatbotQuestions: [],
+  chatbotClosing: "¡Gracias! Un agente te va a atender en breve. 🙌",
 };
 
 const SEED_TEMPLATES: { id: string; label: string; body: string; shortcut: string }[] = [
@@ -76,7 +79,17 @@ type PrismaContactWith = {
   adSourceUrl: string | null;
   adPlatform: string | null;
   adCtwaClid: string | null;
-  messages: { id: string; direction: string; body: string; sentAt: Date; status: string }[];
+  messages: {
+    id: string;
+    direction: string;
+    body: string;
+    sentAt: Date;
+    status: string;
+    mediaType: string | null;
+    mediaUrl: string | null;
+    mediaName: string | null;
+    mediaMime: string | null;
+  }[];
   notes: { id: string; content: string; authorId: string; createdAt: Date }[];
 };
 
@@ -118,6 +131,10 @@ function rowToContact(row: PrismaContactWith): Contact {
         body: m.body,
         sentAt: m.sentAt.toISOString(),
         status: m.status as MessagePreview["status"],
+        mediaType: (m.mediaType as MessagePreview["mediaType"]) ?? undefined,
+        mediaUrl: m.mediaUrl ?? undefined,
+        mediaName: m.mediaName ?? undefined,
+        mediaMime: m.mediaMime ?? undefined,
       })),
     notes: row.notes
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
@@ -251,8 +268,14 @@ class CrmStore {
       adPlatform?: "facebook" | "instagram";
       adCtwaClid?: string;
     };
+    mediaMeta?: {
+      type: "image" | "video" | "audio" | "document";
+      url: string;
+      name?: string;
+      mime?: string;
+    };
   }): Promise<{ contact: Contact; isNew: boolean }> {
-    const { lineId, fromNumber, fromName, body, timestamp, messageId, adMeta } = params;
+    const { lineId, fromNumber, fromName, body, timestamp, messageId, adMeta, mediaMeta } = params;
     const existing = await this.findByPhone(fromNumber);
     const isNew = !existing;
     let contactId: string;
@@ -317,6 +340,10 @@ class CrmStore {
         body,
         sentAt: new Date(timestamp),
         status: "delivered",
+        mediaType: mediaMeta?.type ?? null,
+        mediaUrl: mediaMeta?.url ?? null,
+        mediaName: mediaMeta?.name ?? null,
+        mediaMime: mediaMeta?.mime ?? null,
       },
     });
 
@@ -347,7 +374,12 @@ class CrmStore {
     return { contact: fresh!, isNew };
   }
 
-  async appendOutbound(contactId: string, body: string, messageId?: string): Promise<MessagePreview | null> {
+  async appendOutbound(
+    contactId: string,
+    body: string,
+    messageId?: string,
+    media?: { type: "image" | "video" | "audio" | "document"; url: string; name?: string; mime?: string }
+  ): Promise<MessagePreview | null> {
     const exists = await prisma.contact.findUnique({ where: { id: contactId } });
     if (!exists) return null;
     const now = new Date();
@@ -359,6 +391,10 @@ class CrmStore {
         body,
         sentAt: now,
         status: "sent",
+        mediaType: media?.type ?? null,
+        mediaUrl: media?.url ?? null,
+        mediaName: media?.name ?? null,
+        mediaMime: media?.mime ?? null,
       },
     });
     await prisma.contact.update({
@@ -371,6 +407,10 @@ class CrmStore {
       body: msg.body,
       sentAt: msg.sentAt.toISOString(),
       status: msg.status as MessagePreview["status"],
+      mediaType: (msg.mediaType as MessagePreview["mediaType"]) ?? undefined,
+      mediaUrl: msg.mediaUrl ?? undefined,
+      mediaName: msg.mediaName ?? undefined,
+      mediaMime: msg.mediaMime ?? undefined,
     };
   }
 
@@ -476,6 +516,9 @@ class CrmStore {
       autoAssignEnabled: row.autoAssignEnabled,
       autoAssignStrategy: row.autoAssignStrategy as AutomationSettings["autoAssignStrategy"],
       autoAssignRoles: parseJson<("admin" | "agente")[]>(row.autoAssignRoles, ["agente"]),
+      chatbotEnabled: row.chatbotEnabled,
+      chatbotQuestions: parseJson<AutomationSettings["chatbotQuestions"]>(row.chatbotQuestions, []),
+      chatbotClosing: row.chatbotClosing,
     };
   }
 
@@ -487,6 +530,9 @@ class CrmStore {
     if (patch.autoAssignEnabled !== undefined) data.autoAssignEnabled = patch.autoAssignEnabled;
     if (patch.autoAssignStrategy !== undefined) data.autoAssignStrategy = patch.autoAssignStrategy;
     if (patch.autoAssignRoles !== undefined) data.autoAssignRoles = JSON.stringify(patch.autoAssignRoles);
+    if (patch.chatbotEnabled !== undefined) data.chatbotEnabled = patch.chatbotEnabled;
+    if (patch.chatbotQuestions !== undefined) data.chatbotQuestions = JSON.stringify(patch.chatbotQuestions);
+    if (patch.chatbotClosing !== undefined) data.chatbotClosing = patch.chatbotClosing;
     await prisma.settings.upsert({
       where: { id: 1 },
       create: {
@@ -497,6 +543,9 @@ class CrmStore {
         autoAssignEnabled: DEFAULT_SETTINGS.autoAssignEnabled,
         autoAssignStrategy: DEFAULT_SETTINGS.autoAssignStrategy,
         autoAssignRoles: JSON.stringify(DEFAULT_SETTINGS.autoAssignRoles),
+        chatbotEnabled: DEFAULT_SETTINGS.chatbotEnabled,
+        chatbotQuestions: JSON.stringify(DEFAULT_SETTINGS.chatbotQuestions),
+        chatbotClosing: DEFAULT_SETTINGS.chatbotClosing,
         ...data,
       },
       update: data,
@@ -571,6 +620,58 @@ class CrmStore {
   async deleteTemplate(id: string): Promise<boolean> {
     try {
       await prisma.template.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ─── Chatbot state ───────────────────────────────────────────
+
+  async setChatbotState(contactId: string, state: "idle" | "asking" | "done", step: number, answers: Record<string, string>) {
+    try {
+      await prisma.contact.update({
+        where: { id: contactId },
+        data: {
+          chatbotState: state,
+          chatbotStep: step,
+          chatbotAnswers: JSON.stringify(answers),
+        },
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // ─── Tags ────────────────────────────────────────────────────
+
+  async listTags(): Promise<{ id: string; label: string; color: string }[]> {
+    const rows = await prisma.tag.findMany({ orderBy: { createdAt: "asc" } });
+    return rows.map((r) => ({ id: r.id, label: r.label, color: r.color }));
+  }
+
+  async addTag(input: { label: string; color: string }): Promise<{ id: string; label: string; color: string }> {
+    const r = await prisma.tag.create({
+      data: { label: input.label.trim(), color: input.color },
+    });
+    return { id: r.id, label: r.label, color: r.color };
+  }
+
+  async updateTag(id: string, patch: { label?: string; color?: string }) {
+    const data: Record<string, string> = {};
+    if (patch.label !== undefined) data.label = patch.label.trim();
+    if (patch.color !== undefined) data.color = patch.color;
+    try {
+      const r = await prisma.tag.update({ where: { id }, data });
+      return { id: r.id, label: r.label, color: r.color };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async deleteTag(id: string): Promise<boolean> {
+    try {
+      await prisma.tag.delete({ where: { id } });
       return true;
     } catch {
       return false;

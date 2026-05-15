@@ -48,6 +48,9 @@ export interface AutomationSettings {
   autoAssignEnabled: boolean;
   autoAssignStrategy: AutoAssignStrategy;
   autoAssignRoles: ("admin" | "agente")[]; // roles eligible for assignment
+  chatbotEnabled: boolean;
+  chatbotQuestions: ChatbotQuestion[];
+  chatbotClosing: string;
 }
 
 export interface Agent {
@@ -79,12 +82,26 @@ export interface Note {
   authorId: string;
 }
 
+export type MediaType = "image" | "video" | "audio" | "document";
+
 export interface MessagePreview {
   id: string;
   direction: "inbound" | "outbound";
   body: string;
   sentAt: string;
   status: "sent" | "delivered" | "read" | "failed";
+  mediaType?: MediaType;
+  mediaUrl?: string;
+  mediaName?: string;
+  mediaMime?: string;
+}
+
+export interface ChatbotQuestion {
+  key: string;       // identifier used in answers map
+  text: string;      // the actual question sent to the customer
+  type: "text" | "yes_no";
+  // If type === yes_no and the answer is "no", mark contact as no_califica
+  failsIfNo?: boolean;
 }
 
 export interface Contact {

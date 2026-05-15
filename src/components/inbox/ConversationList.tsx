@@ -56,7 +56,7 @@ export default function ConversationList({ contacts, selectedId, onSelect, unrea
   const unreadTotal = Object.values(unreadMap).reduce((s, n) => s + n, 0);
 
   return (
-    <div className="flex flex-col w-[360px] shrink-0 border-r border-slate-200 bg-white overflow-hidden">
+    <div className="flex flex-col w-full lg:w-[360px] shrink-0 border-r border-slate-200 bg-white overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-slate-200">
         <div className="flex items-center justify-between mb-3">

@@ -10,8 +10,11 @@ import {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
   type WASocket,
+  type WAMessage,
 } from "@whiskeysockets/baileys";
+import { saveBuffer, classifyMime } from "@/server/storage";
 import { Boom } from "@hapi/boom";
 import type { WhatsAppLine, InboundMessage, SendResult } from "./types";
 import { crmStore } from "@/server/store/crm-store";
@@ -163,6 +166,119 @@ class BaileysManager {
     }
   }
 
+  async sendMedia(
+    lineId: string,
+    toNumber: string,
+    media: {
+      kind: "image" | "video" | "audio" | "document";
+      filePath: string; // local server path
+      mime?: string;
+      fileName?: string;
+      caption?: string;
+    }
+  ): Promise<SendResult> {
+    const session = this.sessions.get(lineId);
+    if (!session?.sock || session.line.status !== "connected") {
+      return { ok: false, error: "Línea no conectada" };
+    }
+    const jid = toNumber.includes("@") ? toNumber : `${toNumber.replace(/\D/g, "")}@s.whatsapp.net`;
+    try {
+      let content: Parameters<WASocket["sendMessage"]>[1];
+      if (media.kind === "image") {
+        content = { image: { url: media.filePath }, caption: media.caption, mimetype: media.mime };
+      } else if (media.kind === "video") {
+        content = { video: { url: media.filePath }, caption: media.caption, mimetype: media.mime };
+      } else if (media.kind === "audio") {
+        content = { audio: { url: media.filePath }, mimetype: media.mime ?? "audio/mp4" };
+      } else {
+        content = {
+          document: { url: media.filePath },
+          mimetype: media.mime ?? "application/octet-stream",
+          fileName: media.fileName ?? path.basename(media.filePath),
+          caption: media.caption,
+        };
+      }
+      const result = await session.sock.sendMessage(jid, content);
+      return { ok: true, id: result?.key.id ?? undefined };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  }
+
+  /**
+   * Walks a contact through the configured chatbot flow. Called on every
+   * inbound message. Handles three cases:
+   *  - First time: contact is "idle" → save the just-received inbound as the
+   *    answer to nothing (it's their initial message), then send question[0]
+   *    and move to step 1, state "asking".
+   *  - Subsequent: contact is "asking", their inbound is the answer to
+   *    questions[step-1]. Save it, advance step. If more questions remain,
+   *    send the next one. Otherwise send the closing message, mark "done",
+   *    and apply qualification rules.
+   *  - Already done: skip.
+   */
+  private async runChatbotStep(lineId: string, contactId: string, toNumber: string, inboundBody: string) {
+    const contact = await crmStore.get(contactId);
+    if (!contact) return;
+    const stateRaw = (contact as unknown as { chatbotState?: string }).chatbotState;
+    const stepRaw = (contact as unknown as { chatbotStep?: number }).chatbotStep ?? 0;
+    if (stateRaw === "done") return;
+    const settings = await crmStore.getSettings();
+    const questions = settings.chatbotQuestions;
+    if (questions.length === 0) return;
+
+    // Load current answers
+    const answersRaw = (contact as unknown as { chatbotAnswers?: string }).chatbotAnswers ?? "{}";
+    let answers: Record<string, string> = {};
+    try { answers = JSON.parse(answersRaw); } catch { /* ignore */ }
+
+    // If first interaction (idle), don't store body as answer — just ask Q1.
+    if (stateRaw === "idle" || !stateRaw) {
+      const q = questions[0];
+      const text = q.text.replace(/\{\{nombre\}\}/g, contact.name.split(" ")[0].replace(/^\+/, ""));
+      await this.sendChatbotText(lineId, contactId, toNumber, text);
+      await crmStore.setChatbotState(contactId, "asking", 1, answers);
+      return;
+    }
+
+    // state === "asking" — current body is the answer to questions[stepRaw - 1]
+    const answeredQ = questions[stepRaw - 1];
+    if (answeredQ) {
+      answers[answeredQ.key] = inboundBody;
+    }
+
+    // Decide next question or close
+    if (stepRaw >= questions.length) {
+      // Finished — send closing + apply qualification
+      await this.sendChatbotText(lineId, contactId, toNumber, settings.chatbotClosing);
+      await crmStore.setChatbotState(contactId, "done", stepRaw, answers);
+
+      // Qualification: if any failsIfNo question got a "no" answer, mark no_califica
+      const failed = questions.some((q) => {
+        if (q.type !== "yes_no" || !q.failsIfNo) return false;
+        const a = (answers[q.key] ?? "").trim().toLowerCase();
+        return a === "no" || a.startsWith("n");
+      });
+      if (failed) {
+        await crmStore.patch(contactId, { status: "no_califica" });
+      }
+      return;
+    }
+
+    // Send next question
+    const next = questions[stepRaw];
+    const text = next.text.replace(/\{\{nombre\}\}/g, contact.name.split(" ")[0].replace(/^\+/, ""));
+    await this.sendChatbotText(lineId, contactId, toNumber, text);
+    await crmStore.setChatbotState(contactId, "asking", stepRaw + 1, answers);
+  }
+
+  private async sendChatbotText(lineId: string, contactId: string, toNumber: string, text: string) {
+    const res = await this.send(lineId, toNumber, text);
+    if (res.ok) {
+      await crmStore.appendOutbound(contactId, text, res.id);
+    }
+  }
+
   /** Returns the first connected line, or null if none. */
   firstConnectedLine(): WhatsAppLine | null {
     const sessions = Array.from(this.sessions.values());
@@ -238,15 +354,58 @@ class BaileysManager {
         if (!remoteJid) continue;
         const isGroup = remoteJid.endsWith("@g.us");
         if (isGroup) continue; // skip group chats for CRM ingestion
+
+        // Detect media on the message
+        const imageMsg = msg.message?.imageMessage;
+        const videoMsg = msg.message?.videoMessage;
+        const audioMsg = msg.message?.audioMessage;
+        const documentMsg = msg.message?.documentMessage ?? msg.message?.documentWithCaptionMessage?.message?.documentMessage;
+        const hasMedia = !!(imageMsg || videoMsg || audioMsg || documentMsg);
+
         const body =
           msg.message?.conversation ??
           msg.message?.extendedTextMessage?.text ??
-          msg.message?.imageMessage?.caption ??
-          msg.message?.videoMessage?.caption ??
-          "";
-        if (!body) continue;
+          imageMsg?.caption ??
+          videoMsg?.caption ??
+          documentMsg?.caption ??
+          (hasMedia ? "" : "");
+        if (!body && !hasMedia) continue;
         const fromNumber = remoteJid.split("@")[0].split(":")[0];
         const timestamp = Number(msg.messageTimestamp) * 1000 || Date.now();
+
+        // Download media if present (skip audio for now — saves bandwidth)
+        let mediaMeta: {
+          type: "image" | "video" | "audio" | "document";
+          url: string;
+          name?: string;
+          mime?: string;
+        } | undefined;
+        if (hasMedia) {
+          try {
+            const buf = (await downloadMediaMessage(
+              msg as WAMessage,
+              "buffer",
+              {},
+              { logger: this.logger as never, reuploadRequest: sock.updateMediaMessage }
+            )) as Buffer;
+            const mime =
+              imageMsg?.mimetype ||
+              videoMsg?.mimetype ||
+              audioMsg?.mimetype ||
+              documentMsg?.mimetype ||
+              "application/octet-stream";
+            const fileName = documentMsg?.fileName || `wa-${Date.now()}.${mime.split("/")[1] ?? "bin"}`;
+            const stored = await saveBuffer(buf, fileName, mime);
+            mediaMeta = {
+              type: classifyMime(mime),
+              url: `/api/files/${stored.id}`,
+              name: documentMsg?.fileName ?? undefined,
+              mime,
+            };
+          } catch (err) {
+            console.warn("[baileys] media download failed:", err);
+          }
+        }
 
         // Extract click-to-WhatsApp ad metadata from Meta, if present.
         // Lives in extendedTextMessage.contextInfo.externalAdReply for ad-sourced messages.
@@ -295,6 +454,7 @@ class BaileysManager {
           fromName: msg.pushName ?? undefined,
           body,
           adMeta,
+          mediaMeta,
           timestamp,
           messageId: msg.key.id ?? undefined,
         });
@@ -324,6 +484,16 @@ class BaileysManager {
               }).catch(() => {});
             }
           }
+        }
+
+        // Chatbot flow handling
+        try {
+          const settings = await crmStore.getSettings();
+          if (settings.chatbotEnabled && settings.chatbotQuestions.length > 0) {
+            await this.runChatbotStep(id, contact.id, fromNumber, body);
+          }
+        } catch (err) {
+          console.warn("[chatbot] step failed:", err);
         }
       }
     });

@@ -3,7 +3,10 @@
 import Link from "next/link";
 import type { Contact } from "@/types";
 import { useAgents } from "@/store/agents-store";
-import { TAGS } from "@/mock/tags";
+import { useEffect, useState } from "react";
+
+interface DbTag { id: string; label: string; color: string; }
+let TAGS_CACHE: DbTag[] = [];
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { SOURCE_LABELS, SOURCE_COLORS, STATUS_LABELS } from "@/lib/constants";
 
@@ -15,7 +18,17 @@ interface Props {
 export default function ContactInfoDrawer({ contact, onClose }: Props) {
   const { agents: AGENTS } = useAgents();
   const agent = AGENTS.find((a) => a.id === contact.assignedAgentId);
-  const tags = TAGS.filter((t) => contact.tagIds.includes(t.id));
+  const [allTags, setAllTags] = useState<DbTag[]>(TAGS_CACHE);
+  useEffect(() => {
+    fetch("/api/tags", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { tags?: DbTag[] }) => {
+        TAGS_CACHE = d.tags ?? [];
+        setAllTags(TAGS_CACHE);
+      })
+      .catch(() => {});
+  }, []);
+  const tags = allTags.filter((t) => contact.tagIds.includes(t.id));
   const initials = contact.name.split(" ").map((w) => w[0]).slice(0, 2).join("");
 
   return (

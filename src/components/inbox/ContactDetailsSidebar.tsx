@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import type { Contact, Note } from "@/types";
 import { useAgents } from "@/store/agents-store";
-import { TAGS } from "@/mock/tags";
 import { cn } from "@/lib/utils";
 import { SOURCE_LABELS, STATUS_LABELS } from "@/lib/constants";
 
@@ -14,6 +13,8 @@ interface Props {
   onClose: () => void;
   onChangeAgent: (agentId: string | undefined) => void;
 }
+
+interface DbTag { id: string; label: string; color: string; }
 
 function FieldRow({
   label,
@@ -83,14 +84,42 @@ export default function ContactDetailsSidebar({ contact, onClose, onChangeAgent 
   const isUnassigned = !contact.assignedAgentId;
   const canReassign = isAdmin;
   const canSelfAssign = !isAdmin && isUnassigned;
-  const tags = TAGS.filter((t) => contact.tagIds.includes(t.id));
+
+  const [allTags, setAllTags] = useState<DbTag[]>([]);
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [contactTagIds, setContactTagIds] = useState<string[]>(contact.tagIds);
+
+  useEffect(() => { setContactTagIds(contact.tagIds); }, [contact.id, contact.tagIds]);
+  useEffect(() => {
+    fetch("/api/tags", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setAllTags(d.tags ?? []))
+      .catch(() => {});
+  }, []);
+
+  async function persistTags(next: string[]) {
+    setContactTagIds(next);
+    await fetch(`/api/contacts/${contact.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tagIds: next }),
+    }).catch(() => {});
+  }
+  function toggleTag(tagId: string) {
+    const next = contactTagIds.includes(tagId)
+      ? contactTagIds.filter((id) => id !== tagId)
+      : [...contactTagIds, tagId];
+    persistTags(next);
+  }
+
+  const contactTags = allTags.filter((t) => contactTagIds.includes(t.id));
 
   const initials = contact.name.split(" ").map((w) => w[0]).slice(0, 2).join("");
   const [first, ...rest] = contact.name.split(" ");
   const last = rest.join(" ");
 
   return (
-    <aside className="flex flex-col w-[340px] shrink-0 bg-white border-l border-slate-200 overflow-hidden">
+    <aside className="flex flex-col w-full lg:w-[340px] shrink-0 bg-white border-l border-slate-200 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
         <h3 className="text-sm font-bold text-slate-900">Detalles del contacto</h3>
@@ -235,19 +264,46 @@ export default function ContactDetailsSidebar({ contact, onClose, onChangeAgent 
         </div>
 
         {/* Etiquetas */}
-        <div className="px-4 pb-3">
-          <p className="text-xs text-slate-500 mb-1">Etiquetas ({tags.length})</p>
+        <div className="px-4 pb-3 relative">
+          <p className="text-xs text-slate-500 mb-1">Etiquetas ({contactTags.length})</p>
           <div className="flex flex-wrap gap-1">
-            {tags.map((t) => (
+            {contactTags.map((t) => (
               <span key={t.id} className={cn("inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium", t.color)}>
                 {t.label}
-                <button className="opacity-50 hover:opacity-100">×</button>
+                <button onClick={() => toggleTag(t.id)} className="opacity-50 hover:opacity-100">×</button>
               </span>
             ))}
-            <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed border-slate-300 text-xs text-slate-500 hover:bg-slate-50">
+            <button
+              onClick={() => setTagPickerOpen((v) => !v)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed border-slate-300 text-xs text-slate-500 hover:bg-slate-50"
+            >
               +
             </button>
           </div>
+          {tagPickerOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setTagPickerOpen(false)} />
+              <div className="absolute left-4 right-4 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-40 max-h-64 overflow-y-auto py-1">
+                {allTags.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-slate-400">No hay etiquetas. Crealas en /etiquetas.</p>
+                ) : (
+                  allTags.map((t) => {
+                    const checked = contactTagIds.includes(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => toggleTag(t.id)}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50"
+                      >
+                        <input type="checkbox" checked={checked} readOnly className="rounded border-slate-300" />
+                        <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", t.color)}>{t.label}</span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Tabs */}

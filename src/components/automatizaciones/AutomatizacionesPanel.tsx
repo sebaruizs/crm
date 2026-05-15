@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { AutomationSettings, MessageTemplate } from "@/types";
+import type { AutomationSettings, ChatbotQuestion, MessageTemplate } from "@/types";
 import { useAgents } from "@/store/agents-store";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,9 @@ const DEFAULTS: AutomationSettings = {
   autoAssignEnabled: false,
   autoAssignStrategy: "least_busy",
   autoAssignRoles: ["agente"],
+  chatbotEnabled: false,
+  chatbotQuestions: [],
+  chatbotClosing: "¡Gracias! Un agente te va a atender en breve. 🙌",
 };
 
 export default function AutomatizacionesPanel() {
@@ -256,6 +259,32 @@ export default function AutomatizacionesPanel() {
             </p>
           </Card>
 
+          {/* Chatbot de calificación */}
+          <Card title="Chatbot de calificación" subtitle="El bot le hace preguntas al cliente antes de derivar al agente">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-medium text-slate-900">Activar chatbot</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Cuando un lead nuevo escribe, el bot le hace las preguntas en orden. Las respuestas quedan guardadas y, si una pregunta marcada como crítica recibe "no", el lead se marca automáticamente como "No Califica".
+                </p>
+              </div>
+              <Toggle
+                checked={settings.chatbotEnabled}
+                onChange={(v) => save({ chatbotEnabled: v })}
+                disabled={saving}
+              />
+            </div>
+
+            {settings.chatbotEnabled && (
+              <ChatbotQuestionsEditor
+                questions={settings.chatbotQuestions}
+                closing={settings.chatbotClosing}
+                onChange={(questions) => save({ chatbotQuestions: questions })}
+                onClosingChange={(closing) => save({ chatbotClosing: closing })}
+              />
+            )}
+          </Card>
+
           {/* Coming soon (visible roadmap) */}
           <Card title="Próximamente" subtitle="Estas automatizaciones están en desarrollo" muted>
             <ul className="space-y-2 text-sm text-slate-500">
@@ -422,6 +451,111 @@ function DangerZone({ onToast }: { onToast: (msg: string) => void }) {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+function ChatbotQuestionsEditor({
+  questions,
+  closing,
+  onChange,
+  onClosingChange,
+}: {
+  questions: ChatbotQuestion[];
+  closing: string;
+  onChange: (q: ChatbotQuestion[]) => void;
+  onClosingChange: (s: string) => void;
+}) {
+  function update(idx: number, patch: Partial<ChatbotQuestion>) {
+    const next = questions.map((q, i) => (i === idx ? { ...q, ...patch } : q));
+    onChange(next);
+  }
+  function remove(idx: number) {
+    onChange(questions.filter((_, i) => i !== idx));
+  }
+  function add() {
+    onChange([
+      ...questions,
+      { key: `q${questions.length + 1}`, text: "", type: "text" },
+    ]);
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-medium text-slate-700">Preguntas (en orden)</p>
+      {questions.length === 0 && (
+        <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          Aún no hay preguntas. Agregá la primera abajo.
+        </p>
+      )}
+      {questions.map((q, i) => (
+        <div key={i} className="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 w-6">{i + 1}.</span>
+            <input
+              type="text"
+              value={q.key}
+              onChange={(e) => update(i, { key: e.target.value.replace(/\s/g, "_") })}
+              placeholder="clave (ej. plataforma)"
+              className="w-32 text-xs font-mono border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+            <select
+              value={q.type}
+              onChange={(e) => update(i, { type: e.target.value as ChatbotQuestion["type"] })}
+              className="text-xs border border-slate-200 rounded px-2 py-1 bg-white"
+            >
+              <option value="text">Texto libre</option>
+              <option value="yes_no">Sí / No</option>
+            </select>
+            <span className="flex-1" />
+            <button
+              onClick={() => remove(i)}
+              className="text-xs text-red-600 hover:bg-red-50 px-2 py-1 rounded"
+            >
+              Quitar
+            </button>
+          </div>
+          <textarea
+            value={q.text}
+            onChange={(e) => update(i, { text: e.target.value })}
+            placeholder="Pregunta para el cliente (podés usar {{nombre}})"
+            rows={2}
+            className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
+          />
+          {q.type === "yes_no" && (
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input
+                type="checkbox"
+                checked={!!q.failsIfNo}
+                onChange={(e) => update(i, { failsIfNo: e.target.checked })}
+                className="rounded border-slate-300"
+              />
+              Si responde "no", marcar lead como No Califica
+            </label>
+          )}
+        </div>
+      ))}
+      <button
+        onClick={add}
+        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-dashed border-slate-300 hover:border-slate-400 rounded-lg"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        Agregar pregunta
+      </button>
+
+      <div className="pt-3 border-t border-slate-200">
+        <p className="text-xs font-medium text-slate-700 mb-1">Mensaje de cierre</p>
+        <p className="text-xs text-slate-500 mb-2">Se envía cuando el cliente terminó de contestar todas las preguntas.</p>
+        <textarea
+          value={closing}
+          onChange={(e) => onClosingChange(e.target.value)}
+          rows={2}
+          className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
+        />
       </div>
     </div>
   );

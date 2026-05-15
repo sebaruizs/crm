@@ -47,6 +47,11 @@ model Contact {
   adPlatform    String?  // "facebook" | "instagram"
   adCtwaClid    String?  // click-to-WhatsApp click ID (for Meta attribution)
 
+  // Chatbot flow state: -1 = not in bot, 0..N = waiting answer to question N, "done" = handed off
+  chatbotState  String   @default("idle") // "idle" | "asking" | "done"
+  chatbotStep   Int      @default(0)
+  chatbotAnswers String  @default("{}") // JSON key→value of answers
+
   messages      Message[]
   notes         Note[]
   notifications Notification[]
@@ -59,13 +64,18 @@ model Contact {
 }
 
 model Message {
-  id        String   @id @default(cuid())
-  contactId String
-  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  direction String
-  body      String
-  sentAt    DateTime
-  status    String
+  id          String   @id @default(cuid())
+  contactId   String
+  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  direction   String
+  body        String
+  sentAt      DateTime
+  status      String
+  // Optional media attached to the message
+  mediaType   String?  // "image" | "video" | "audio" | "document"
+  mediaUrl    String?  // public URL to the file (served via /api/files/:id)
+  mediaName   String?  // original filename for documents
+  mediaMime   String?  // MIME type
 
   @@index([contactId])
   @@index([sentAt])
@@ -99,6 +109,10 @@ model Settings {
   autoAssignEnabled  Boolean @default(false)
   autoAssignStrategy String  @default("least_busy")
   autoAssignRoles    String  @default("[\"agente\"]")
+  // Chatbot de calificación
+  chatbotEnabled   Boolean @default(false)
+  chatbotQuestions String  @default("[]") // JSON [{key, text, type, options?}]
+  chatbotClosing   String  @default("¡Gracias! Un agente te va a atender en breve. 🙌")
 }
 
 model Notification {
@@ -127,4 +141,11 @@ model Line {
   lastError   String?
   connectedAt DateTime?
   createdAt   DateTime  @default(now())
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  label     String
+  color     String   // Tailwind class e.g. "bg-blue-100 text-blue-700"
+  createdAt DateTime @default(now())
 }

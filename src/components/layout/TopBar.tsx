@@ -10,28 +10,38 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
   "/clientes-potenciales": { title: "Clientes potenciales", subtitle: "Pipeline de ventas por WhatsApp" },
   "/automatizaciones": { title: "Automatizaciones", subtitle: "Reglas que se ejecutan automáticamente" },
   "/plantillas": { title: "Plantillas", subtitle: "Respuestas rápidas para el composer" },
+  "/etiquetas": { title: "Etiquetas", subtitle: "Categorizar contactos" },
   "/usuarios": { title: "Usuarios", subtitle: "Administradores y agentes del CRM" },
   "/lineas": { title: "Líneas WhatsApp", subtitle: "Conexión de números vía Baileys" },
 };
 
-export default function TopBar() {
+interface Props {
+  onMenuClick?: () => void;
+}
+
+export default function TopBar({ onMenuClick }: Props) {
   const pathname = usePathname();
   const key = Object.keys(TITLES).find((k) => pathname.startsWith(k)) ?? "/resumen";
   const { title, subtitle } = TITLES[key];
 
   return (
-    <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200 shrink-0">
-      <div>
-        <h1 className="text-lg font-semibold text-slate-900">{title}</h1>
-        <p className="text-sm text-slate-500">{subtitle}</p>
-      </div>
-      <div className="flex items-center gap-3">
-        <button className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-medium rounded-lg transition-colors">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+    <header className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 bg-white border-b border-slate-200 shrink-0">
+      <div className="flex items-center gap-3 min-w-0">
+        <button
+          onClick={onMenuClick}
+          className="lg:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+          aria-label="Abrir menú"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
           </svg>
-          Nueva conversación
         </button>
+        <div className="min-w-0">
+          <h1 className="text-base sm:text-lg font-semibold text-slate-900 truncate">{title}</h1>
+          <p className="text-xs sm:text-sm text-slate-500 truncate">{subtitle}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <NotificationsBell />
       </div>
     </header>

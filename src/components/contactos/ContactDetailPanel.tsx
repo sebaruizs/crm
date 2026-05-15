@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Contact } from "@/types";
 import { useAgents } from "@/store/agents-store";
-import { TAGS } from "@/mock/tags";
+interface DbTag { id: string; label: string; color: string; }
+let TAGS_CACHE: DbTag[] = [];
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { SOURCE_LABELS, STATUS_LABELS, SOURCE_COLORS } from "@/lib/constants";
 
@@ -46,7 +47,17 @@ export default function ContactDetailPanel({ contact, onClose }: Props) {
   }
 
   const agent = AGENTS.find((a) => a.id === contact.assignedAgentId);
-  const tags = TAGS.filter((t) => contact.tagIds.includes(t.id));
+  const [allTags, setAllTags] = useState<DbTag[]>(TAGS_CACHE);
+  useEffect(() => {
+    fetch("/api/tags", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { tags?: DbTag[] }) => {
+        TAGS_CACHE = d.tags ?? [];
+        setAllTags(TAGS_CACHE);
+      })
+      .catch(() => {});
+  }, []);
+  const tags = allTags.filter((t) => contact.tagIds.includes(t.id));
 
   return (
     <div className="flex flex-col h-full bg-white border-l border-slate-200">
