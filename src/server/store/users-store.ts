@@ -40,6 +40,60 @@ class UsersStore {
       }
     }
 
+    // Safety net: ensure at least one admin exists. If the table has agents
+    // but no admin (e.g. someone deleted all admin users), recreate the
+    // bootstrap admin so the system stays accessible.
+    const adminCount = await prisma.user.count({ where: { role: "admin" } });
+    if (adminCount === 0) {
+      const bootstrapEmail = "admin@autoflota.mx";
+      const existing = await prisma.user.findUnique({ where: { email: bootstrapEmail } });
+      if (existing) {
+        await prisma.user.update({
+          where: { id: existing.id },
+          data: { role: "admin", password: await hashPassword("admin1234") },
+        });
+      } else {
+        await prisma.user.create({
+          data: {
+            id: "a-bootstrap",
+            name: "Administrador",
+            email: bootstrapEmail,
+            password: await hashPassword("admin1234"),
+            role: "admin",
+            color: "bg-violet-500",
+            avatarInitials: "AD",
+          },
+        });
+      }
+      console.warn(`[users-store] No admin found. Created/promoted bootstrap admin (${bootstrapEmail} / admin1234). CHANGE THE PASSWORD IMMEDIATELY.`);
+    }
+
+    // Emergency password reset via env var. Useful when you're locked out
+    // because nobody remembers a password. Set RESET_ADMIN_PASSWORD=true
+    // in Easypanel env, restart, login, then UNSET the var.
+    if (process.env.RESET_ADMIN_PASSWORD === "true") {
+      const bootstrapEmail = "admin@autoflota.mx";
+      await prisma.user.upsert({
+        where: { email: bootstrapEmail },
+        create: {
+          id: "a-bootstrap",
+          name: "Administrador",
+          email: bootstrapEmail,
+          password: await hashPassword("admin1234"),
+          role: "admin",
+          color: "bg-violet-500",
+          avatarInitials: "AD",
+        },
+        update: {
+          role: "admin",
+          password: await hashPassword("admin1234"),
+        },
+      });
+      // Also clear sessions so any active intruder is logged out
+      await prisma.session.deleteMany({});
+      console.warn(`[users-store] RESET_ADMIN_PASSWORD=true. Bootstrap admin password reset to default. UNSET THIS ENV VAR NOW.`);
+    }
+
     // Upgrade any existing plaintext passwords to bcrypt in place.
     const plaintextUsers = await prisma.user.findMany();
     for (const u of plaintextUsers) {
