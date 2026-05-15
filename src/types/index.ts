@@ -4,6 +4,7 @@ export type LeadSource =
   | "whatsapp_link"
   | "referido"
   | "organico"
+  | "manual"
   | "otro";
 
 export type ContactStatus =
@@ -96,6 +97,17 @@ export interface MessagePreview {
   mediaMime?: string;
 }
 
+export type CustomFieldType = "text" | "number" | "date" | "select";
+
+export interface CustomFieldDefinition {
+  id: string;
+  key: string;
+  label: string;
+  type: CustomFieldType;
+  options?: string[];
+  position: number;
+}
+
 export interface ChatbotQuestion {
   key: string;       // identifier used in answers map
   text: string;      // the actual question sent to the customer
@@ -128,6 +140,10 @@ export interface Contact {
   adSourceUrl?: string;
   adPlatform?: "facebook" | "instagram";
   adCtwaClid?: string;
+  // Chatbot state
+  chatbotState?: "idle" | "asking" | "done";
+  chatbotStep?: number;
+  chatbotAnswers?: Record<string, string>;
 }
 
 export type KanbanColumnId =

@@ -64,6 +64,16 @@ const NAV_ITEMS = [
     adminOnly: true,
   },
   {
+    href: "/campos-personalizados",
+    label: "Campos personalizados",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+      </svg>
+    ),
+    adminOnly: true,
+  },
+  {
     href: "/etiquetas",
     label: "Etiquetas",
     icon: (

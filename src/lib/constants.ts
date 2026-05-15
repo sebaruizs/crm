@@ -15,6 +15,7 @@ export const SOURCE_LABELS: Record<LeadSource, string> = {
   whatsapp_link: "Link WhatsApp",
   referido: "Referido",
   organico: "Orgánico",
+  manual: "Carga manual",
   otro: "Otro",
 };
 
@@ -33,5 +34,6 @@ export const SOURCE_COLORS: Record<LeadSource, string> = {
   whatsapp_link: "bg-green-100 text-green-700",
   referido: "bg-purple-100 text-purple-700",
   organico: "bg-amber-100 text-amber-700",
+  manual: "bg-slate-100 text-slate-700",
   otro: "bg-slate-100 text-slate-600",
 };

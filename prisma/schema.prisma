@@ -149,3 +149,15 @@ model Tag {
   color     String   // Tailwind class e.g. "bg-blue-100 text-blue-700"
   createdAt DateTime @default(now())
 }
+
+model CustomFieldDef {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  label     String
+  type      String   // "text" | "number" | "date" | "select"
+  options   String   @default("[]") // JSON array of strings (for type=select)
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([position])
+}

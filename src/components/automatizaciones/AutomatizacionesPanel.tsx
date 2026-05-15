@@ -94,6 +94,19 @@ export default function AutomatizacionesPanel() {
         </div>
       ) : (
         <>
+          {settings.welcomeEnabled && settings.chatbotEnabled && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 flex gap-3">
+              <svg className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div className="text-sm text-amber-900">
+                <p className="font-semibold">Tenés activadas las dos automatizaciones de bienvenida</p>
+                <p className="text-amber-800 mt-0.5">
+                  El cliente va a recibir <strong>el mensaje de bienvenida</strong> y, en simultáneo, <strong>la primera pregunta del chatbot</strong>. Te recomendamos elegir solo una.
+                </p>
+              </div>
+            </div>
+          )}
           {/* Welcome message */}
           <Card title="Mensaje de bienvenida automático" subtitle="Se envía la primera vez que un número desconocido te escribe">
             <div className="flex items-center justify-between mb-4">

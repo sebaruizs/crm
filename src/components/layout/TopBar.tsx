@@ -11,6 +11,7 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
   "/automatizaciones": { title: "Automatizaciones", subtitle: "Reglas que se ejecutan automáticamente" },
   "/plantillas": { title: "Plantillas", subtitle: "Respuestas rápidas para el composer" },
   "/etiquetas": { title: "Etiquetas", subtitle: "Categorizar contactos" },
+  "/campos-personalizados": { title: "Campos personalizados", subtitle: "Datos extra para tus contactos" },
   "/usuarios": { title: "Usuarios", subtitle: "Administradores y agentes del CRM" },
   "/lineas": { title: "Líneas WhatsApp", subtitle: "Conexión de números vía Baileys" },
 };

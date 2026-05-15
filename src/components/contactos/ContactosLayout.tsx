@@ -18,6 +18,7 @@ export default function ContactosLayout() {
   const [filters, setFilters] = useState<ContactFilters>(DEFAULT_FILTERS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,7 +106,10 @@ export default function ContactosLayout() {
 
         <span className="text-xs text-slate-500">{filtered.length} de {contacts.length} contactos</span>
 
-        <button className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-medium rounded-lg transition-colors">
+        <button
+          onClick={() => setCreateOpen(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-medium rounded-lg transition-colors"
+        >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
@@ -120,6 +124,124 @@ export default function ContactosLayout() {
 
       {/* Detail drawer */}
       {selected && <ContactInfoDrawer contact={selected} onClose={() => setSelectedId(null)} />}
+
+      {/* Create modal */}
+      {createOpen && (
+        <CreateContactModal
+          onClose={() => setCreateOpen(false)}
+          onCreated={(c) => {
+            setCreateOpen(false);
+            setContacts((list) => [c, ...list]);
+            setSelectedId(c.id);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreateContactModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (c: Contact) => void;
+}) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!name.trim()) return setError("Nombre requerido");
+    if (!phone.trim() || phone.replace(/\D/g, "").length < 7) {
+      return setError("Teléfono inválido");
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, phone, source: "manual" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Error al crear");
+        if (data.contact) onCreated(data.contact);
+        return;
+      }
+      onCreated(data.contact);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-white rounded-xl shadow-2xl">
+        <form onSubmit={submit}>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+            <h2 className="text-base font-bold text-slate-900">Nuevo contacto</h2>
+            <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Nombre</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="ej. Juan Pérez"
+                autoFocus
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Teléfono (con código de país, sin espacios)
+              </label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+5219991234567"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                Para enviar mensajes vía WhatsApp, debe coincidir con el formato internacional.
+              </p>
+            </div>
+            {error && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {error}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50 rounded-b-xl">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 rounded-lg"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg"
+            >
+              {submitting ? "Creando…" : "Crear contacto"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

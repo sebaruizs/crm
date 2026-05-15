@@ -401,27 +401,9 @@ export default function ContactDetailsSidebar({ contact, onClose, onChangeAgent 
           </Section>
         )}
 
-        <Section title="Cualificación del lead" defaultOpen>
-          {contact.customFields.map((cf) => (
-            <FieldRow key={cf.key} label={cf.label} collapsible>
-              <p className="text-sm text-slate-900">{cf.value}</p>
-            </FieldRow>
-          ))}
-          <FieldRow label="¿Actualmente estás trabajando o querés empezar a trabajar en plataformas de delivery?" collapsible>
-            <p className="text-sm text-slate-900">Sí, quiero empezar a trabajar</p>
-          </FieldRow>
-          <FieldRow label="¿Actualmente tenés moto para trabajar?" collapsible>
-            <p className="text-sm text-slate-900">{contact.vehicleInterest ? "Sí, tengo moto propia" : "No, necesito alquilar"}</p>
-          </FieldRow>
-          <FieldRow label="¿Cuántos días a la semana trabajás (o pensás trabajar) en plataformas?" collapsible>
-            <p className="text-sm text-slate-900">5-6 días</p>
-          </FieldRow>
-          <FieldRow label="Licencia verificada">
-            <span className={cn("inline-block text-xs px-2 py-0.5 rounded-full font-medium", contact.licenseVerified ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
-              {contact.licenseVerified ? "Verificada" : "Pendiente"}
-            </span>
-          </FieldRow>
-        </Section>
+        <CustomFieldsSection contact={contact} />
+
+        <ChatbotAnswersSection contact={contact} />
 
         <NotesSection contactId={contact.id} initialNotes={contact.notes} />
 
@@ -435,6 +417,178 @@ export default function ContactDetailsSidebar({ contact, onClose, onChangeAgent 
         </Section>
       </div>
     </aside>
+  );
+}
+
+interface ChatbotQuestionDef {
+  key: string;
+  text: string;
+  type: "text" | "yes_no";
+}
+
+interface CustomFieldDef {
+  id: string;
+  key: string;
+  label: string;
+  type: "text" | "number" | "date" | "select";
+  options?: string[];
+  position: number;
+}
+
+function CustomFieldsSection({ contact }: { contact: Contact }) {
+  const [defs, setDefs] = useState<CustomFieldDef[]>([]);
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const v: Record<string, string> = {};
+    for (const cf of contact.customFields ?? []) v[cf.key] = cf.value;
+    return v;
+  });
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/custom-fields", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setDefs(d.fields ?? []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const v: Record<string, string> = {};
+    for (const cf of contact.customFields ?? []) v[cf.key] = cf.value;
+    setValues(v);
+  }, [contact.id, contact.customFields]);
+
+  async function persist(key: string, value: string) {
+    setSavingKey(key);
+    const next = { ...values, [key]: value };
+    setValues(next);
+    const fields = defs.map((d) => ({
+      key: d.key,
+      label: d.label,
+      value: next[d.key] ?? "",
+    }));
+    try {
+      await fetch(`/api/contacts/${contact.id}/custom-fields`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields }),
+      });
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  if (defs.length === 0) {
+    return (
+      <Section title="Campos personalizados" defaultOpen={false}>
+        <p className="text-xs text-slate-400 py-2">
+          No hay campos personalizados definidos.{" "}
+          <a href="/campos-personalizados" className="text-blue-600 underline">
+            Configurarlos
+          </a>
+        </p>
+      </Section>
+    );
+  }
+
+  return (
+    <Section title="Campos personalizados" defaultOpen>
+      <div className="space-y-3">
+        {defs.map((def) => (
+          <div key={def.id}>
+            <label className="block text-xs text-slate-500 mb-1">
+              {def.label}
+              {savingKey === def.key && <span className="ml-2 text-slate-400">guardando…</span>}
+            </label>
+            {def.type === "text" && (
+              <input
+                type="text"
+                value={values[def.key] ?? ""}
+                onChange={(e) => setValues({ ...values, [def.key]: e.target.value })}
+                onBlur={(e) => persist(def.key, e.target.value)}
+                className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            )}
+            {def.type === "number" && (
+              <input
+                type="number"
+                value={values[def.key] ?? ""}
+                onChange={(e) => setValues({ ...values, [def.key]: e.target.value })}
+                onBlur={(e) => persist(def.key, e.target.value)}
+                className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            )}
+            {def.type === "date" && (
+              <input
+                type="date"
+                value={values[def.key] ?? ""}
+                onChange={(e) => {
+                  setValues({ ...values, [def.key]: e.target.value });
+                  persist(def.key, e.target.value);
+                }}
+                className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            )}
+            {def.type === "select" && (
+              <select
+                value={values[def.key] ?? ""}
+                onChange={(e) => {
+                  setValues({ ...values, [def.key]: e.target.value });
+                  persist(def.key, e.target.value);
+                }}
+                className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+              >
+                <option value="">— Seleccionar —</option>
+                {(def.options ?? []).map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function ChatbotAnswersSection({ contact }: { contact: Contact }) {
+  const [questions, setQuestions] = useState<ChatbotQuestionDef[]>([]);
+  useEffect(() => {
+    fetch("/api/settings", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setQuestions(d.settings?.chatbotQuestions ?? []))
+      .catch(() => {});
+  }, []);
+
+  const answers = contact.chatbotAnswers ?? {};
+  const answerKeys = Object.keys(answers);
+  if (answerKeys.length === 0) return null;
+
+  return (
+    <Section title="Respuestas del chatbot" defaultOpen>
+      <div className="space-y-2">
+        {answerKeys.map((key) => {
+          const def = questions.find((q) => q.key === key);
+          return (
+            <div key={key} className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-0.5">
+                {def?.text ?? key}
+              </p>
+              <p className="text-sm text-slate-900 whitespace-pre-wrap">{answers[key]}</p>
+            </div>
+          );
+        })}
+      </div>
+      {contact.chatbotState === "done" && (
+        <p className="text-[10px] text-slate-400 mt-2">
+          ✓ Calificación completa
+        </p>
+      )}
+      {contact.chatbotState === "asking" && (
+        <p className="text-[10px] text-amber-600 mt-2">
+          ⏳ Calificación en curso (paso {contact.chatbotStep ?? 0})
+        </p>
+      )}
+    </Section>
   );
 }
 

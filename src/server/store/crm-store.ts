@@ -3,6 +3,8 @@ import type {
   Contact,
   ContactStatus,
   CustomField,
+  CustomFieldDefinition,
+  CustomFieldType,
   LeadSource,
   MessagePreview,
   MessageTemplate,
@@ -79,6 +81,9 @@ type PrismaContactWith = {
   adSourceUrl: string | null;
   adPlatform: string | null;
   adCtwaClid: string | null;
+  chatbotState: string;
+  chatbotStep: number;
+  chatbotAnswers: string;
   messages: {
     id: string;
     direction: string;
@@ -123,6 +128,9 @@ function rowToContact(row: PrismaContactWith): Contact {
     adSourceUrl: row.adSourceUrl ?? undefined,
     adPlatform: (row.adPlatform as "facebook" | "instagram" | undefined) ?? undefined,
     adCtwaClid: row.adCtwaClid ?? undefined,
+    chatbotState: row.chatbotState as Contact["chatbotState"],
+    chatbotStep: row.chatbotStep,
+    chatbotAnswers: parseJson<Record<string, string>>(row.chatbotAnswers, {}),
     messageHistory: row.messages
       .sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime())
       .map((m) => ({
@@ -620,6 +628,84 @@ class CrmStore {
   async deleteTemplate(id: string): Promise<boolean> {
     try {
       await prisma.template.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ─── Custom field definitions ────────────────────────────────
+
+  async listCustomFieldDefs(): Promise<CustomFieldDefinition[]> {
+    const rows = await prisma.customFieldDef.findMany({ orderBy: { position: "asc" } });
+    return rows.map((r) => ({
+      id: r.id,
+      key: r.key,
+      label: r.label,
+      type: r.type as CustomFieldType,
+      options: parseJson<string[]>(r.options, []),
+      position: r.position,
+    }));
+  }
+
+  async addCustomFieldDef(input: { key: string; label: string; type: CustomFieldType; options?: string[] }) {
+    const max = await prisma.customFieldDef.aggregate({ _max: { position: true } });
+    const r = await prisma.customFieldDef.create({
+      data: {
+        key: input.key.trim(),
+        label: input.label.trim(),
+        type: input.type,
+        options: JSON.stringify(input.options ?? []),
+        position: (max._max.position ?? 0) + 1,
+      },
+    });
+    return {
+      id: r.id,
+      key: r.key,
+      label: r.label,
+      type: r.type as CustomFieldType,
+      options: parseJson<string[]>(r.options, []),
+      position: r.position,
+    };
+  }
+
+  async updateCustomFieldDef(id: string, patch: Partial<{ key: string; label: string; type: CustomFieldType; options: string[]; position: number }>) {
+    const data: Record<string, unknown> = {};
+    if (patch.key !== undefined) data.key = patch.key.trim();
+    if (patch.label !== undefined) data.label = patch.label.trim();
+    if (patch.type !== undefined) data.type = patch.type;
+    if (patch.options !== undefined) data.options = JSON.stringify(patch.options);
+    if (patch.position !== undefined) data.position = patch.position;
+    try {
+      const r = await prisma.customFieldDef.update({ where: { id }, data });
+      return {
+        id: r.id,
+        key: r.key,
+        label: r.label,
+        type: r.type as CustomFieldType,
+        options: parseJson<string[]>(r.options, []),
+        position: r.position,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async deleteCustomFieldDef(id: string) {
+    try {
+      await prisma.customFieldDef.delete({ where: { id } });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async setContactCustomFields(contactId: string, fields: CustomField[]) {
+    try {
+      await prisma.contact.update({
+        where: { id: contactId },
+        data: { customFields: JSON.stringify(fields) },
+      });
       return true;
     } catch {
       return false;
