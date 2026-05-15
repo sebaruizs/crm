@@ -69,18 +69,50 @@ function rangeFromPreset(presetId: string): { from: Date; to: Date } {
   return { from, to };
 }
 
+function toDateInputValue(d: Date): string {
+  // YYYY-MM-DD in local timezone for <input type="date">
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function ResumenDashboard() {
   const [report, setReport] = useState<ReportsPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [preset, setPreset] = useState("30d");
+  const [preset, setPreset] = useState<string>("30d"); // "7d" | "30d" | "90d" | "all" | "custom"
+
+  // Custom range state — applied only when preset === "custom"
+  const today = toDateInputValue(new Date());
+  const monthAgo = toDateInputValue(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+  const [customFrom, setCustomFrom] = useState(monthAgo);
+  const [customTo, setCustomTo] = useState(today);
+  const [customError, setCustomError] = useState("");
+
+  // Effective range used by the fetch
+  const { effectiveFrom, effectiveTo } = useMemo(() => {
+    if (preset === "custom") {
+      const from = new Date(customFrom + "T00:00:00");
+      const to = new Date(customTo + "T23:59:59");
+      return { effectiveFrom: from, effectiveTo: to };
+    }
+    const r = rangeFromPreset(preset);
+    return { effectiveFrom: r.from, effectiveTo: r.to };
+  }, [preset, customFrom, customTo]);
 
   useEffect(() => {
+    if (preset === "custom") {
+      if (new Date(customFrom) > new Date(customTo)) {
+        setCustomError("La fecha 'desde' debe ser anterior a 'hasta'");
+        return;
+      }
+      setCustomError("");
+    }
     let cancelled = false;
     async function load() {
-      const { from, to } = rangeFromPreset(preset);
       const params = new URLSearchParams({
-        from: from.toISOString(),
-        to: to.toISOString(),
+        from: effectiveFrom.toISOString(),
+        to: effectiveTo.toISOString(),
       });
       try {
         const res = await fetch(`/api/reports?${params}`, { cache: "no-store" });
@@ -98,7 +130,17 @@ export default function ResumenDashboard() {
       cancelled = true;
       clearInterval(t);
     };
-  }, [preset]);
+  }, [preset, effectiveFrom, effectiveTo, customFrom, customTo]);
+
+  function switchToCustom() {
+    // Seed the custom inputs with the currently effective range so the user
+    // doesn't lose context when switching modes.
+    if (preset !== "custom") {
+      setCustomFrom(toDateInputValue(effectiveFrom));
+      setCustomTo(toDateInputValue(effectiveTo));
+    }
+    setPreset("custom");
+  }
 
   const pipelineByStatus = useMemo(() => {
     const m = new Map<ContactStatus, number>();
@@ -122,25 +164,97 @@ export default function ResumenDashboard() {
   return (
     <div className="p-6 space-y-6">
       {/* Range selector */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-slate-700 mr-2">Rango:</span>
-        {RANGE_PRESETS.map((p) => (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-slate-700 mr-2">Rango:</span>
+          {RANGE_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPreset(p.id)}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded-lg transition-colors",
+                preset === p.id
+                  ? "bg-slate-900 text-white"
+                  : "bg-white text-slate-700 border border-slate-200 hover:border-slate-400"
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
           <button
-            key={p.id}
-            onClick={() => setPreset(p.id)}
+            onClick={switchToCustom}
             className={cn(
-              "px-3 py-1.5 text-xs font-medium rounded-lg transition-colors",
-              preset === p.id
+              "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors",
+              preset === "custom"
                 ? "bg-slate-900 text-white"
                 : "bg-white text-slate-700 border border-slate-200 hover:border-slate-400"
             )}
           >
-            {p.label}
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            Personalizado
           </button>
-        ))}
-        <span className="text-xs text-slate-400 ml-auto">
-          {new Date(report.range.from).toLocaleDateString("es-MX")} → {new Date(report.range.to).toLocaleDateString("es-MX")}
-        </span>
+          <span className="text-xs text-slate-400 ml-auto whitespace-nowrap">
+            {new Date(report.range.from).toLocaleDateString("es-MX")} → {new Date(report.range.to).toLocaleDateString("es-MX")}
+          </span>
+        </div>
+
+        {preset === "custom" && (
+          <div className="flex flex-wrap items-end gap-3 p-3 bg-white border border-slate-200 rounded-lg">
+            <div>
+              <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wide mb-1">Desde</label>
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wide mb-1">Hasta</label>
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom}
+                max={today}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            <div className="flex items-center gap-2 ml-auto text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+                  setCustomFrom(toDateInputValue(first));
+                  setCustomTo(toDateInputValue(now));
+                }}
+                className="text-slate-600 hover:bg-slate-100 px-2 py-1 rounded"
+              >
+                Este mes
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                  const last = new Date(now.getFullYear(), now.getMonth(), 0);
+                  setCustomFrom(toDateInputValue(first));
+                  setCustomTo(toDateInputValue(last));
+                }}
+                className="text-slate-600 hover:bg-slate-100 px-2 py-1 rounded"
+              >
+                Mes pasado
+              </button>
+            </div>
+            {customError && (
+              <p className="w-full text-xs text-red-600">{customError}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* KPIs */}
