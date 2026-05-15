@@ -165,11 +165,18 @@ model Line {
   id          String    @id
   name        String
   agentId     String?
+  provider    String    @default("baileys") // "baileys" | "meta"
   status      String    @default("disconnected")
   phoneNumber String?
   lastError   String?
   connectedAt DateTime?
   createdAt   DateTime  @default(now())
+
+  // Meta Cloud API specific (only set when provider="meta")
+  phoneNumberId String?
+  accessToken   String?
+  verifyToken   String?
+  wabaId        String?
 }
 
 model Tag {

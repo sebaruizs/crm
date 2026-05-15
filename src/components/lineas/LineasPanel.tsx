@@ -19,6 +19,11 @@ export default function LineasPanel() {
   const [messages, setMessages] = useState<InboundMessage[]>([]);
   const [name, setName] = useState("");
   const [agentId, setAgentId] = useState<string>("");
+  const [provider, setProvider] = useState<"baileys" | "meta">("baileys");
+  const [metaPhoneNumberId, setMetaPhoneNumberId] = useState("");
+  const [metaAccessToken, setMetaAccessToken] = useState("");
+  const [metaWabaId, setMetaWabaId] = useState("");
+  const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
 
@@ -52,18 +57,42 @@ export default function LineasPanel() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    setCreateError("");
     if (!name.trim()) return;
+    if (provider === "meta") {
+      if (!metaPhoneNumberId.trim() || !metaAccessToken.trim()) {
+        setCreateError("phoneNumberId y accessToken son requeridos");
+        return;
+      }
+    }
     setCreating(true);
     try {
+      const payload: Record<string, unknown> = {
+        name: name.trim(),
+        agentId: agentId || undefined,
+        provider,
+      };
+      if (provider === "meta") {
+        payload.phoneNumberId = metaPhoneNumberId.trim();
+        payload.accessToken = metaAccessToken.trim();
+        if (metaWabaId.trim()) payload.wabaId = metaWabaId.trim();
+      }
       const res = await fetch("/api/lines", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), agentId: agentId || undefined }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
+      if (!res.ok) {
+        setCreateError(data.error ?? "Error al crear la línea");
+        return;
+      }
       if (data.line) setSelectedLineId(data.line.id);
       setName("");
       setAgentId("");
+      setMetaPhoneNumberId("");
+      setMetaAccessToken("");
+      setMetaWabaId("");
       await refresh();
     } finally {
       setCreating(false);
@@ -100,17 +129,29 @@ export default function LineasPanel() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl">
-      {/* Warning banner */}
-      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 flex gap-3">
-        <svg className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
-        <div className="text-sm">
-          <p className="font-semibold text-amber-900">Conexión vía Baileys (no oficial)</p>
-          <p className="text-amber-800">
-            Usa WhatsApp Web por debajo. Viola los términos de Meta y existe riesgo real de baneo del número.
-            Solo apto para pruebas. Para producción, usa la WhatsApp Business API oficial.
-          </p>
+      {/* Provider comparison */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="rounded-lg border border-blue-300 bg-blue-50 p-3 flex gap-2">
+          <svg className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+          </svg>
+          <div className="text-xs">
+            <p className="font-semibold text-blue-900">Meta Cloud API (oficial)</p>
+            <p className="text-blue-800 leading-relaxed">
+              Recomendado para producción. Sin riesgo de baneo. Requiere cuenta en Meta Business + verificación del número.
+            </p>
+          </div>
+        </div>
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 flex gap-2">
+          <svg className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <div className="text-xs">
+            <p className="font-semibold text-amber-900">Baileys (no oficial)</p>
+            <p className="text-amber-800 leading-relaxed">
+              Usa WhatsApp Web. Viola los términos de Meta, riesgo real de baneo del número. Bueno para pruebas.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -119,6 +160,40 @@ export default function LineasPanel() {
         <div className="lg:col-span-1 space-y-4">
           <form onSubmit={handleCreate} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
             <h3 className="text-sm font-semibold text-slate-700">Conectar nueva línea</h3>
+
+            {/* Provider selector */}
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Proveedor</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setProvider("baileys")}
+                  className={cn(
+                    "p-2.5 rounded-lg border-2 text-left transition-colors",
+                    provider === "baileys"
+                      ? "border-green-500 bg-green-50"
+                      : "border-slate-200 hover:border-slate-300"
+                  )}
+                >
+                  <p className="text-xs font-semibold text-slate-900">Baileys (QR)</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">No oficial, riesgo de baneo</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProvider("meta")}
+                  className={cn(
+                    "p-2.5 rounded-lg border-2 text-left transition-colors",
+                    provider === "meta"
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-slate-200 hover:border-slate-300"
+                  )}
+                >
+                  <p className="text-xs font-semibold text-slate-900">Meta Cloud API</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Oficial, sin riesgo</p>
+                </button>
+              </div>
+            </div>
+
             <input
               type="text"
               value={name}
@@ -136,12 +211,71 @@ export default function LineasPanel() {
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
             </select>
+
+            {provider === "meta" && (
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                    Phone Number ID
+                  </label>
+                  <input
+                    type="text"
+                    value={metaPhoneNumberId}
+                    onChange={(e) => setMetaPhoneNumberId(e.target.value.trim())}
+                    placeholder="123456789012345"
+                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                    Access Token
+                  </label>
+                  <input
+                    type="password"
+                    value={metaAccessToken}
+                    onChange={(e) => setMetaAccessToken(e.target.value.trim())}
+                    placeholder="EAAxxxxxxxxx..."
+                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                    WABA ID <span className="text-slate-400 font-normal normal-case">(opcional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={metaWabaId}
+                    onChange={(e) => setMetaWabaId(e.target.value.trim())}
+                    placeholder="98765432101234"
+                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Estas credenciales vienen de Meta Business → WhatsApp Manager → API Setup.
+                  El access token debe ser de larga duración (system user).
+                </p>
+              </div>
+            )}
+
+            {createError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
+                {createError}
+              </p>
+            )}
+
             <button
               type="submit"
               disabled={creating || !name.trim()}
-              className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
+              className={cn(
+                "w-full px-4 py-2 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors",
+                provider === "meta" ? "bg-blue-500 hover:bg-blue-600" : "bg-green-500 hover:bg-green-600"
+              )}
             >
-              {creating ? "Iniciando…" : "Generar QR"}
+              {creating
+                ? "Conectando…"
+                : provider === "meta"
+                ? "Conectar línea Meta"
+                : "Generar QR"}
             </button>
           </form>
 
@@ -166,9 +300,19 @@ export default function LineasPanel() {
                       )}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 truncate">{line.name}</p>
-                        <p className="text-xs text-slate-500">
-                          {line.phoneNumber ? `+${line.phoneNumber}` : "Sin número"}
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{line.name}</p>
+                          <span className={cn(
+                            "text-[9px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0",
+                            line.provider === "meta"
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-amber-100 text-amber-700"
+                          )}>
+                            {line.provider === "meta" ? "Meta" : "Baileys"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 truncate">
+                          {line.phoneNumber ? (line.provider === "meta" ? line.phoneNumber : `+${line.phoneNumber}`) : "Sin número"}
                           {agent && ` · ${agent.name}`}
                         </p>
                       </div>
@@ -199,7 +343,17 @@ export default function LineasPanel() {
               <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h2 className="text-lg font-bold text-slate-900">{selected.name}</h2>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h2 className="text-lg font-bold text-slate-900">{selected.name}</h2>
+                      <span className={cn(
+                        "text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide",
+                        selected.provider === "meta"
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-amber-100 text-amber-700"
+                      )}>
+                        {selected.provider === "meta" ? "Meta API" : "Baileys"}
+                      </span>
+                    </div>
                     <p className="text-sm text-slate-500">
                       Creada {formatRelativeTime(selected.createdAt)}
                       {selected.connectedAt && ` · Conectada ${formatRelativeTime(selected.connectedAt)}`}
@@ -212,6 +366,28 @@ export default function LineasPanel() {
                     Eliminar
                   </button>
                 </div>
+
+                {/* Meta webhook setup info */}
+                {selected.provider === "meta" && selected.verifyToken && (
+                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+                    <p className="text-xs font-semibold text-blue-900">Configuración del webhook en Meta</p>
+                    <div>
+                      <p className="text-[10px] text-blue-800 mb-0.5">Callback URL:</p>
+                      <code className="block text-[11px] font-mono bg-white border border-blue-200 rounded px-2 py-1 break-all">
+                        {typeof window !== "undefined" ? window.location.origin : ""}/api/wa-webhook/{selected.id}
+                      </code>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-blue-800 mb-0.5">Verify Token:</p>
+                      <code className="block text-[11px] font-mono bg-white border border-blue-200 rounded px-2 py-1 break-all">
+                        {selected.verifyToken}
+                      </code>
+                    </div>
+                    <p className="text-[10px] text-blue-700 leading-relaxed">
+                      En Meta App → WhatsApp → Configuration: pegá ambos valores y suscribíte al field <code className="bg-white px-1 py-0.5 rounded">messages</code>.
+                    </p>
+                  </div>
+                )}
 
                 {selected.status === "qr" && selected.qr && (
                   <div className="flex flex-col items-center gap-3 py-6 bg-slate-50 rounded-lg">

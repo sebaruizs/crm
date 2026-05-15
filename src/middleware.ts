@@ -30,6 +30,11 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Public webhook endpoints — Meta calls these without our session cookie.
+  if (pathname.startsWith("/api/wa-webhook/")) {
+    return NextResponse.next(); // skip headers too to not break Meta integration
+  }
+
   // API routes: auth is handled per-route. Don't redirect, but still add
   // security headers to the response.
   if (pathname.startsWith("/api/")) {

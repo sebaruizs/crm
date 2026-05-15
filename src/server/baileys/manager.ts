@@ -43,12 +43,18 @@ class BaileysManager {
     await importLegacyJsonOnce();
     const lines = await this.loadMeta();
     for (const line of lines) {
-      this.sessions.set(line.id, { line: { ...line, status: "disconnected", qr: undefined } });
-      // Auto-reconnect lines that have credentials on disk
-      const authDir = path.join(SESSIONS_DIR, line.id);
-      if (existsSync(path.join(authDir, "creds.json"))) {
-        this.startSocket(line.id).catch(() => {});
+      this.sessions.set(line.id, { line: { ...line, status: line.status, qr: undefined } });
+      // Auto-reconnect Baileys lines that have credentials on disk
+      if (line.provider === "baileys") {
+        const authDir = path.join(SESSIONS_DIR, line.id);
+        if (existsSync(path.join(authDir, "creds.json"))) {
+          this.startSocket(line.id).catch(() => {});
+        } else {
+          this.sessions.get(line.id)!.line.status = "disconnected";
+        }
       }
+      // Meta lines: status persisted in DB ("connected" or "disconnected").
+      // No socket to start, credentials are loaded on demand.
     }
   }
 
@@ -58,16 +64,19 @@ class BaileysManager {
       id: r.id,
       name: r.name,
       agentId: r.agentId ?? undefined,
+      provider: (r.provider as WhatsAppLine["provider"]) ?? "baileys",
       status: r.status as WhatsAppLine["status"],
       phoneNumber: r.phoneNumber ?? undefined,
       lastError: r.lastError ?? undefined,
       connectedAt: r.connectedAt?.toISOString(),
       createdAt: r.createdAt.toISOString(),
+      phoneNumberId: r.phoneNumberId ?? undefined,
+      verifyToken: r.verifyToken ?? undefined,
+      wabaId: r.wabaId ?? undefined,
     }));
   }
 
   private async saveMeta() {
-    // Upsert each line currently in memory
     const operations = Array.from(this.sessions.values()).map((s) => {
       const line = s.line;
       return prisma.line.upsert({
@@ -76,15 +85,20 @@ class BaileysManager {
           id: line.id,
           name: line.name,
           agentId: line.agentId,
+          provider: line.provider,
           status: line.status,
           phoneNumber: line.phoneNumber,
           lastError: line.lastError,
           connectedAt: line.connectedAt ? new Date(line.connectedAt) : null,
           createdAt: new Date(line.createdAt),
+          phoneNumberId: line.phoneNumberId ?? null,
+          verifyToken: line.verifyToken ?? null,
+          wabaId: line.wabaId ?? null,
         },
         update: {
           name: line.name,
           agentId: line.agentId,
+          provider: line.provider,
           status: line.status,
           phoneNumber: line.phoneNumber,
           lastError: line.lastError,
@@ -102,6 +116,7 @@ class BaileysManager {
       id,
       name,
       agentId,
+      provider: "baileys",
       status: "connecting",
       createdAt: new Date().toISOString(),
     };
@@ -115,6 +130,73 @@ class BaileysManager {
       }
     });
     return line;
+  }
+
+  /**
+   * Creates a Meta Cloud API line. Credentials are validated against Graph API
+   * before persisting. If valid, the line is marked "connected" immediately
+   * (no QR step). The verifyToken is auto-generated for webhook security.
+   */
+  async createMetaLine(input: {
+    name: string;
+    agentId?: string;
+    phoneNumberId: string;
+    accessToken: string;
+    wabaId?: string;
+  }): Promise<{ ok: true; line: WhatsAppLine } | { ok: false; error: string }> {
+    await this.init();
+    // Validate creds against Graph API
+    const { verifyMetaCredentials } = await import("@/server/wa/meta");
+    const verify = await verifyMetaCredentials(input.phoneNumberId, input.accessToken);
+    if (!verify.ok) {
+      return { ok: false, error: verify.error ?? "Credenciales inválidas" };
+    }
+    const id = randomUUID();
+    const verifyToken = randomUUID().replace(/-/g, "");
+    await prisma.line.create({
+      data: {
+        id,
+        name: input.name,
+        agentId: input.agentId,
+        provider: "meta",
+        status: "connected",
+        phoneNumber: verify.displayPhoneNumber,
+        connectedAt: new Date(),
+        phoneNumberId: input.phoneNumberId,
+        accessToken: input.accessToken,
+        verifyToken,
+        wabaId: input.wabaId ?? null,
+      },
+    });
+    const line: WhatsAppLine = {
+      id,
+      name: input.name,
+      agentId: input.agentId,
+      provider: "meta",
+      status: "connected",
+      phoneNumber: verify.displayPhoneNumber,
+      connectedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      phoneNumberId: input.phoneNumberId,
+      verifyToken,
+      wabaId: input.wabaId,
+    };
+    this.sessions.set(id, { line });
+    return { ok: true, line };
+  }
+
+  /**
+   * Returns server-side credentials for a Meta line. Never expose this
+   * via API responses — only for internal send/webhook handlers.
+   */
+  async getMetaCredentials(lineId: string): Promise<{ phoneNumberId: string; accessToken: string; verifyToken: string } | null> {
+    const row = await prisma.line.findUnique({ where: { id: lineId } });
+    if (!row || row.provider !== "meta" || !row.phoneNumberId || !row.accessToken) return null;
+    return {
+      phoneNumberId: row.phoneNumberId,
+      accessToken: row.accessToken,
+      verifyToken: row.verifyToken ?? "",
+    };
   }
 
   listLines(): WhatsAppLine[] {
@@ -154,9 +236,21 @@ class BaileysManager {
 
   async send(lineId: string, toNumber: string, text: string): Promise<SendResult> {
     const session = this.sessions.get(lineId);
-    if (!session?.sock || session.line.status !== "connected") {
+    if (!session) return { ok: false, error: "Línea no encontrada" };
+    if (session.line.status !== "connected") {
       return { ok: false, error: "Línea no conectada" };
     }
+
+    // Meta Cloud API path
+    if (session.line.provider === "meta") {
+      const creds = await this.getMetaCredentials(lineId);
+      if (!creds) return { ok: false, error: "Credenciales Meta no disponibles" };
+      const { sendMetaText } = await import("@/server/wa/meta");
+      return sendMetaText(creds.phoneNumberId, creds.accessToken, toNumber, text);
+    }
+
+    // Baileys path
+    if (!session.sock) return { ok: false, error: "Socket Baileys no inicializado" };
     const jid = toNumber.includes("@") ? toNumber : `${toNumber.replace(/\D/g, "")}@s.whatsapp.net`;
     try {
       const result = await session.sock.sendMessage(jid, { text });
@@ -164,6 +258,15 @@ class BaileysManager {
     } catch (err) {
       return { ok: false, error: String(err) };
     }
+  }
+
+  /**
+   * Public helper used by the Meta webhook to push an inbound message
+   * into the same debug inbox that /lineas shows.
+   */
+  pushDebugInbox(msg: InboundMessage) {
+    this.inbox.push(msg);
+    if (this.inbox.length > MAX_INBOX) this.inbox.shift();
   }
 
   async sendMedia(
