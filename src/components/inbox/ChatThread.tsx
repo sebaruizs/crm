@@ -19,6 +19,7 @@ interface Props {
   onOpenDetails: () => void;
   onChangeAgent: (agentId: string | undefined) => void;
   onBack?: () => void;
+  onDelete: () => void;
 }
 
 function formatTime(iso: string) {
@@ -33,7 +34,7 @@ function dayLabel(iso: string) {
   return d.toLocaleDateString("es-MX", { day: "numeric", month: "long" });
 }
 
-export default function ChatThread({ contact, starred, onToggleStar, onSendMessage, onOpenDetails, onChangeAgent, onBack }: Props) {
+export default function ChatThread({ contact, starred, onToggleStar, onSendMessage, onOpenDetails, onChangeAgent, onBack, onDelete }: Props) {
   const [composer, setComposer] = useState("");
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -231,7 +232,11 @@ export default function ChatThread({ contact, starred, onToggleStar, onSendMessa
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           </button>
-          <button className="p-2 hover:bg-slate-100 hover:text-red-600 rounded-lg" title="Eliminar">
+          <button
+            onClick={onDelete}
+            className="p-2 hover:bg-red-50 hover:text-red-600 text-slate-500 rounded-lg"
+            title="Eliminar conversación"
+          >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
             </svg>

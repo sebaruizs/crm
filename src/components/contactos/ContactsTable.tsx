@@ -18,9 +18,10 @@ interface Props {
   contacts: Contact[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onDelete?: (contact: Contact) => void;
 }
 
-export default function ContactsTable({ contacts, selectedId, onSelect }: Props) {
+export default function ContactsTable({ contacts, selectedId, onSelect, onDelete }: Props) {
   const { agents: AGENTS } = useAgents();
   if (contacts.length === 0) {
     return (
@@ -108,11 +109,17 @@ export default function ContactsTable({ contacts, selectedId, onSelect }: Props)
                   {formatRelativeTime(c.lastMessageAt)}
                 </td>
                 <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                  <button className="text-slate-400 hover:text-slate-600 p-1">
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                    </svg>
-                  </button>
+                  {onDelete && (
+                    <button
+                      onClick={() => onDelete(c)}
+                      title="Eliminar contacto"
+                      className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+                      </svg>
+                    </button>
+                  )}
                 </td>
               </tr>
             );

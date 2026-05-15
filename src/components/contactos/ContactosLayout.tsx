@@ -19,6 +19,31 @@ export default function ContactosLayout() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<Contact | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function refreshContacts() {
+    try {
+      const res = await fetch("/api/contacts", { cache: "no-store" });
+      const data = await res.json();
+      setContacts(data.contacts ?? []);
+    } catch { /* ignore */ }
+  }
+
+  async function handleDelete() {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/contacts/${deleteConfirm.id}`, { method: "DELETE" });
+      if (res.ok) {
+        if (selectedId === deleteConfirm.id) setSelectedId(null);
+        setDeleteConfirm(null);
+        await refreshContacts();
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -119,11 +144,41 @@ export default function ContactosLayout() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        <ContactsTable contacts={filtered} selectedId={selectedId} onSelect={setSelectedId} />
+        <ContactsTable
+          contacts={filtered}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onDelete={(c) => setDeleteConfirm(c)}
+        />
       </div>
 
       {/* Detail drawer */}
       {selected && <ContactInfoDrawer contact={selected} onClose={() => setSelectedId(null)} />}
+
+      {/* Delete confirmation */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setDeleteConfirm(null)} />
+          <div className="relative w-full max-w-sm bg-white rounded-xl shadow-2xl p-5">
+            <h3 className="text-base font-bold text-slate-900 mb-2">¿Eliminar contacto?</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Se eliminará <strong>{deleteConfirm.name}</strong> ({deleteConfirm.phone}) con todo su historial. Esta acción no se puede deshacer.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm hover:bg-slate-100 rounded-lg">
+                Cancelar
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg"
+              >
+                {deleting ? "Eliminando…" : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create modal */}
       {createOpen && (
