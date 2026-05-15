@@ -1,14 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { notificationsStore } from "@/server/store/notifications-store";
+import { withAuth } from "@/server/api-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+export const POST = withAuth(async (_req, _ctx, user) => {
   await notificationsStore.init();
-  const body = await req.json().catch(() => ({}));
-  const userId = body.userId as string | undefined;
-  if (!userId) return NextResponse.json({ error: "userId requerido" }, { status: 400 });
-  const updated = await notificationsStore.markAllRead(userId);
+  const updated = await notificationsStore.markAllRead(user.id);
   return NextResponse.json({ updated });
-}
+});

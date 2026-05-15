@@ -118,9 +118,9 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
 
   const visibleNav = NAV_ITEMS.filter((i) => !i.adminOnly || isAdmin);
 
-  function handleLogout() {
+  async function handleLogout() {
     setMenuOpen(false);
-    logout();
+    await logout();
     router.replace("/login");
   }
 

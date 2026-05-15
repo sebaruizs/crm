@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveBuffer, classifyMime } from "@/server/storage";
+import { withAuth } from "@/server/api-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_SIZE = 20 * 1024 * 1024; // 20 MB
 
-export async function POST(req: NextRequest) {
+export const POST = withAuth(async (req: NextRequest) => {
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {
@@ -25,4 +26,4 @@ export async function POST(req: NextRequest) {
     size: stored.size,
     kind: classifyMime(stored.mime),
   });
-}
+});

@@ -394,7 +394,7 @@ function DangerZone({ onToast }: { onToast: (msg: string) => void }) {
       const res = await fetch("/api/admin/wipe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: currentUser.id, confirm: "BORRAR-DATOS" }),
+        body: JSON.stringify({ confirm: "BORRAR-DATOS" }),
       });
       const data = await res.json();
       if (!res.ok) {

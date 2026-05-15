@@ -62,7 +62,7 @@ export default function NotificationsBell() {
   async function refresh() {
     if (!currentUser) return;
     try {
-      const res = await fetch(`/api/notifications?userId=${currentUser.id}`, { cache: "no-store" });
+      const res = await fetch(`/api/notifications`, { cache: "no-store" });
       const data = await res.json();
       const list: AppNotification[] = data.notifications ?? [];
       setNotifications(list);
@@ -111,11 +111,7 @@ export default function NotificationsBell() {
     if (!currentUser) return;
     setOpen(false);
     // Mark as read
-    fetch(`/api/notifications/${n.id}/read`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: currentUser.id }),
-    }).catch(() => {});
+    fetch(`/api/notifications/${n.id}/read`, { method: "POST" }).catch(() => {});
     router.push(`/conversaciones?contact=${n.contactId}`);
     setNotifications((list) =>
       list.map((x) => (x.id === n.id ? { ...x, readAt: new Date().toISOString() } : x))
@@ -125,11 +121,7 @@ export default function NotificationsBell() {
 
   async function handleMarkAllRead() {
     if (!currentUser) return;
-    await fetch("/api/notifications/read-all", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: currentUser.id }),
-    });
+    await fetch("/api/notifications/read-all", { method: "POST" });
     refresh();
   }
 

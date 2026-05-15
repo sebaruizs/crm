@@ -3,9 +3,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Agent, UserRole } from "@/types";
 
-const SESSION_KEY = "crm.session.v1";
-
-// Public-facing user (no password)
 export type PublicAgent = Omit<Agent, "password">;
 
 export interface AgentInput {
@@ -26,7 +23,7 @@ interface AgentsContextValue {
   hydrated: boolean;
   findAgent: (id: string | undefined) => PublicAgent | undefined;
   login: (email: string, password: string) => Promise<LoginResult>;
-  logout: () => void;
+  logout: () => Promise<void>;
   addAgent: (input: AgentInput) => Promise<PublicAgent | null>;
   updateAgent: (id: string, patch: Partial<AgentInput>) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
@@ -37,12 +34,17 @@ const AgentsContext = createContext<AgentsContextValue | null>(null);
 
 export function AgentsProvider({ children }: { children: React.ReactNode }) {
   const [agents, setAgents] = useState<PublicAgent[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<PublicAgent | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   const refreshAgents = useCallback(async () => {
     try {
       const res = await fetch("/api/users", { cache: "no-store" });
+      if (!res.ok) {
+        // 401: clear user list (we're logged out)
+        if (res.status === 401) setAgents([]);
+        return;
+      }
       const data = await res.json();
       setAgents(data.users ?? []);
     } catch {
@@ -50,39 +52,25 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Hydrate session + load agents on mount
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      // Restore saved session id (does not validate against server here; AgentsContext only
-      // ensures the user exists in the fetched list before exposing currentUser).
-      try {
-        const saved = localStorage.getItem(SESSION_KEY);
-        if (saved) setCurrentUserId(saved);
-      } catch {
-        /* ignore */
-      }
-      await refreshAgents();
-      if (!cancelled) setHydrated(true);
-    })();
-    return () => { cancelled = true; };
-  }, [refreshAgents]);
-
-  // Persist current session id
-  useEffect(() => {
-    if (!hydrated) return;
+  const refreshCurrentUser = useCallback(async () => {
     try {
-      if (currentUserId) localStorage.setItem(SESSION_KEY, currentUserId);
-      else localStorage.removeItem(SESSION_KEY);
+      const res = await fetch("/api/auth/me", { cache: "no-store" });
+      const data = await res.json();
+      setCurrentUser(data.user ?? null);
+      return data.user as PublicAgent | null;
     } catch {
-      /* ignore */
+      setCurrentUser(null);
+      return null;
     }
-  }, [currentUserId, hydrated]);
+  }, []);
 
-  const currentUser = useMemo(
-    () => (currentUserId ? agents.find((a) => a.id === currentUserId) ?? null : null),
-    [agents, currentUserId]
-  );
+  useEffect(() => {
+    (async () => {
+      const user = await refreshCurrentUser();
+      if (user) await refreshAgents();
+      setHydrated(true);
+    })();
+  }, [refreshCurrentUser, refreshAgents]);
 
   const isAdmin = currentUser?.role === "admin";
 
@@ -100,7 +88,7 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
       });
       const data = await res.json();
       if (!res.ok) return { ok: false, error: data.error ?? "Error desconocido" };
-      setCurrentUserId(data.user.id);
+      setCurrentUser(data.user);
       await refreshAgents();
       return { ok: true, user: data.user };
     } catch (err) {
@@ -108,8 +96,10 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshAgents]);
 
-  const logout = useCallback(() => {
-    setCurrentUserId(null);
+  const logout = useCallback(async () => {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    setCurrentUser(null);
+    setAgents([]);
   }, []);
 
   const addAgent = useCallback(async (input: AgentInput): Promise<PublicAgent | null> => {
@@ -136,30 +126,23 @@ export function AgentsProvider({ children }: { children: React.ReactNode }) {
   const deleteAgent = useCallback(async (id: string) => {
     const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
     if (res.ok) {
-      if (currentUserId === id) setCurrentUserId(null);
-      await refreshAgents();
+      if (currentUser?.id === id) {
+        await logout();
+      } else {
+        await refreshAgents();
+      }
     }
-  }, [currentUserId, refreshAgents]);
+  }, [currentUser?.id, refreshAgents, logout]);
 
-  return (
-    <AgentsContext.Provider
-      value={{
-        agents,
-        currentUser,
-        isAdmin,
-        hydrated,
-        findAgent,
-        login,
-        logout,
-        addAgent,
-        updateAgent,
-        deleteAgent,
-        refreshAgents,
-      }}
-    >
-      {children}
-    </AgentsContext.Provider>
+  const value = useMemo<AgentsContextValue>(
+    () => ({
+      agents, currentUser, isAdmin, hydrated, findAgent,
+      login, logout, addAgent, updateAgent, deleteAgent, refreshAgents,
+    }),
+    [agents, currentUser, isAdmin, hydrated, findAgent, login, logout, addAgent, updateAgent, deleteAgent, refreshAgents]
   );
+
+  return <AgentsContext.Provider value={value}>{children}</AgentsContext.Provider>;
 }
 
 export function useAgents(): AgentsContextValue {

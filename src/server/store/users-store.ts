@@ -3,6 +3,7 @@ import type { Agent, UserRole } from "@/types";
 import { AGENTS as SEED_AGENTS } from "@/mock/agents";
 import { prisma } from "@/lib/prisma";
 import { importLegacyJsonOnce } from "./migrate-from-json";
+import { hashPassword, looksHashed, verifyPassword } from "@/server/auth";
 
 function deriveInitials(name: string) {
   return name
@@ -21,24 +22,33 @@ class UsersStore {
     if (this.initialized) return;
     this.initialized = true;
     await importLegacyJsonOnce();
-    // Seed if empty (after legacy import)
+    // Seed if empty (after legacy import). Hash the seed password.
     const count = await prisma.user.count();
     if (count === 0) {
-      await prisma.$transaction(
-        SEED_AGENTS.map((u) =>
-          prisma.user.create({
-            data: {
-              id: u.id,
-              name: u.name,
-              email: u.email,
-              password: u.password,
-              role: u.role,
-              color: u.color,
-              avatarInitials: u.avatarInitials,
-            },
-          })
-        )
-      );
+      for (const u of SEED_AGENTS) {
+        await prisma.user.create({
+          data: {
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            password: await hashPassword(u.password),
+            role: u.role,
+            color: u.color,
+            avatarInitials: u.avatarInitials,
+          },
+        });
+      }
+    }
+
+    // Upgrade any existing plaintext passwords to bcrypt in place.
+    const plaintextUsers = await prisma.user.findMany();
+    for (const u of plaintextUsers) {
+      if (!looksHashed(u.password)) {
+        await prisma.user.update({
+          where: { id: u.id },
+          data: { password: await hashPassword(u.password) },
+        });
+      }
     }
   }
 
@@ -85,7 +95,15 @@ class UsersStore {
     const r = await prisma.user.findFirst({
       where: { email: { equals: email.trim(), mode: "insensitive" } },
     });
-    if (!r || r.password !== password) return null;
+    if (!r) return null;
+    const ok = await verifyPassword(password, r.password);
+    if (!ok) return null;
+    // Lazy upgrade: if stored value was plaintext, hash it now
+    if (!looksHashed(r.password)) {
+      const hashed = await hashPassword(password);
+      await prisma.user.update({ where: { id: r.id }, data: { password: hashed } });
+      r.password = hashed;
+    }
     return {
       id: r.id,
       name: r.name,
@@ -111,7 +129,7 @@ class UsersStore {
       data: {
         name: input.name.trim(),
         email: input.email.trim(),
-        password: input.password,
+        password: await hashPassword(input.password),
         role: input.role,
         color: input.color,
         avatarInitials: initials,
@@ -147,7 +165,7 @@ class UsersStore {
     if (patch.email !== undefined) data.email = patch.email.trim();
     if (patch.color !== undefined) data.color = patch.color;
     if (patch.role !== undefined) data.role = patch.role;
-    if (patch.password) data.password = patch.password;
+    if (patch.password) data.password = await hashPassword(patch.password);
     if (patch.avatarInitials !== undefined) {
       data.avatarInitials = patch.avatarInitials.slice(0, 2).toUpperCase();
     }
