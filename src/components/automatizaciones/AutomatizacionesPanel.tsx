@@ -273,6 +273,8 @@ export default function AutomatizacionesPanel() {
               </li>
             </ul>
           </Card>
+
+          <DangerZone onToast={showToast} />
         </>
       )}
 
@@ -334,5 +336,93 @@ function Toggle({
         )}
       />
     </button>
+  );
+}
+
+function DangerZone({ onToast }: { onToast: (msg: string) => void }) {
+  const { currentUser } = useAgents();
+  const [open, setOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [wiping, setWiping] = useState(false);
+
+  async function handleWipe() {
+    if (!currentUser) return;
+    setWiping(true);
+    try {
+      const res = await fetch("/api/admin/wipe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: currentUser.id, confirm: "BORRAR-DATOS" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        onToast(`Error: ${data.error ?? "desconocido"}`);
+      } else {
+        onToast(`Listo: ${data.deleted.contacts} contactos y ${data.deleted.notifications} notificaciones eliminadas`);
+        setOpen(false);
+        setConfirmText("");
+      }
+    } catch {
+      onToast("Error de red");
+    } finally {
+      setWiping(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border-2 border-red-200 bg-red-50/50 p-5">
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+          <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <h3 className="text-sm font-bold text-red-900">Zona peligrosa</h3>
+          <p className="text-xs text-red-800 mt-0.5 mb-3">
+            Elimina <strong>todos los contactos, mensajes, notas y notificaciones</strong> de la base de datos. Los usuarios, plantillas, settings y líneas de WhatsApp se mantienen. Acción irreversible.
+          </p>
+          {!open ? (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="text-xs font-medium text-red-700 bg-white border border-red-300 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Eliminar todos los datos
+            </button>
+          ) : (
+            <div className="space-y-2 bg-white rounded-lg border border-red-300 p-3">
+              <p className="text-xs text-slate-700">
+                Para confirmar, escribí <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono text-red-700">BORRAR-DATOS</code> abajo:
+              </p>
+              <input
+                type="text"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="BORRAR-DATOS"
+                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 font-mono"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setOpen(false); setConfirmText(""); }}
+                  className="text-xs px-3 py-1.5 rounded-lg hover:bg-slate-100"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleWipe}
+                  disabled={confirmText !== "BORRAR-DATOS" || wiping}
+                  className="text-xs font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  {wiping ? "Borrando…" : "Confirmar y borrar"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

@@ -169,32 +169,25 @@ export default function LoginForm() {
             </button>
           </form>
 
-          {/* Demo credentials */}
+          {/* First-time login hint */}
           <div className="mt-8 bg-slate-100 rounded-lg p-4">
             <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
-              Credenciales de demo
+              Primer acceso
             </p>
-            <div className="space-y-1.5 text-xs">
+            <div className="text-xs">
               <button
-                onClick={() => fillDemo("sofia@autoflota.mx", "admin1234")}
+                onClick={() => fillDemo("admin@autoflota.mx", "admin1234")}
                 className="w-full text-left flex items-center justify-between px-2 py-1.5 rounded hover:bg-white transition-colors"
               >
                 <span className="text-slate-700">
-                  <span className="font-mono">sofia@autoflota.mx</span> / <span className="font-mono">admin1234</span>
+                  <span className="font-mono">admin@autoflota.mx</span> / <span className="font-mono">admin1234</span>
                 </span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">Admin</span>
               </button>
-              <button
-                onClick={() => fillDemo("carlos@autoflota.mx", "demo1234")}
-                className="w-full text-left flex items-center justify-between px-2 py-1.5 rounded hover:bg-white transition-colors"
-              >
-                <span className="text-slate-700">
-                  <span className="font-mono">carlos@autoflota.mx</span> / <span className="font-mono">demo1234</span>
-                </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-200 text-slate-700">Agente</span>
-              </button>
             </div>
-            <p className="text-[10px] text-slate-500 mt-2">Click para autocompletar el formulario.</p>
+            <p className="text-[10px] text-slate-500 mt-2">
+              Cambia la contraseña apenas ingreses por primera vez desde <span className="font-medium">Usuarios</span>.
+            </p>
           </div>
         </div>
       </div>

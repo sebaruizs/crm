@@ -1,8 +1,26 @@
 import type { Agent } from "@/types";
 
+/**
+ * Seed users loaded into the database on first boot.
+ *
+ * Only one admin is created so the app can be logged in on a fresh install.
+ * Additional users (agents, more admins) should be created from the
+ * Usuarios page once you log in.
+ *
+ * Default credentials:
+ *   email:    admin@autoflota.mx
+ *   password: admin1234
+ *
+ * Change the password immediately after the first login.
+ */
 export const AGENTS: Agent[] = [
-  { id: "a1", name: "Sofía Ramírez", avatarInitials: "SR", color: "bg-violet-500", email: "sofia@autoflota.mx", role: "admin", password: "admin1234" },
-  { id: "a2", name: "Carlos Mendoza", avatarInitials: "CM", color: "bg-blue-500", email: "carlos@autoflota.mx", role: "agente", password: "demo1234" },
-  { id: "a3", name: "Laura Torres", avatarInitials: "LT", color: "bg-emerald-500", email: "laura@autoflota.mx", role: "agente", password: "demo1234" },
-  { id: "a4", name: "Diego Vega", avatarInitials: "DV", color: "bg-orange-500", email: "diego@autoflota.mx", role: "agente", password: "demo1234" },
+  {
+    id: "a-bootstrap",
+    name: "Administrador",
+    avatarInitials: "AD",
+    color: "bg-violet-500",
+    email: "admin@autoflota.mx",
+    role: "admin",
+    password: "admin1234",
+  },
 ];
