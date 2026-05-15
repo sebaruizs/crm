@@ -71,6 +71,11 @@ type PrismaContactWith = {
   visitScheduledAt: Date | null;
   lineId: string | null;
   customFields: string;
+  adId: string | null;
+  adHeadline: string | null;
+  adSourceUrl: string | null;
+  adPlatform: string | null;
+  adCtwaClid: string | null;
   messages: { id: string; direction: string; body: string; sentAt: Date; status: string }[];
   notes: { id: string; content: string; authorId: string; createdAt: Date }[];
 };
@@ -100,6 +105,11 @@ function rowToContact(row: PrismaContactWith): Contact {
     visitScheduledAt: row.visitScheduledAt?.toISOString() ?? undefined,
     lineId: row.lineId ?? undefined,
     customFields: parseJson<CustomField[]>(row.customFields, []),
+    adId: row.adId ?? undefined,
+    adHeadline: row.adHeadline ?? undefined,
+    adSourceUrl: row.adSourceUrl ?? undefined,
+    adPlatform: (row.adPlatform as "facebook" | "instagram" | undefined) ?? undefined,
+    adCtwaClid: row.adCtwaClid ?? undefined,
     messageHistory: row.messages
       .sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime())
       .map((m) => ({
@@ -234,13 +244,25 @@ class CrmStore {
     body: string;
     timestamp: number;
     messageId?: string;
+    adMeta?: {
+      adId?: string;
+      adHeadline?: string;
+      adSourceUrl?: string;
+      adPlatform?: "facebook" | "instagram";
+      adCtwaClid?: string;
+    };
   }): Promise<{ contact: Contact; isNew: boolean }> {
-    const { lineId, fromNumber, fromName, body, timestamp, messageId } = params;
+    const { lineId, fromNumber, fromName, body, timestamp, messageId, adMeta } = params;
     const existing = await this.findByPhone(fromNumber);
     const isNew = !existing;
     let contactId: string;
     let contactName: string;
     let assignedAgentId: string | undefined;
+
+    // Determine source: ad-sourced lead vs organic
+    let resolvedSource: LeadSource = "organico";
+    if (adMeta?.adPlatform === "instagram") resolvedSource = "instagram";
+    else if (adMeta) resolvedSource = "facebook_ads";
 
     if (existing) {
       contactId = existing.id;
@@ -249,19 +271,37 @@ class CrmStore {
       const updates: Record<string, unknown> = { lastMessageAt: new Date(timestamp) };
       if (contactName !== existing.name) updates.name = contactName;
       if (!existing.lineId) updates.lineId = lineId;
+      // If we just learned ad attribution for an existing contact, store it.
+      // We never overwrite an existing ad attribution.
+      if (adMeta && !existing.adId) {
+        if (adMeta.adId) updates.adId = adMeta.adId;
+        if (adMeta.adHeadline) updates.adHeadline = adMeta.adHeadline;
+        if (adMeta.adSourceUrl) updates.adSourceUrl = adMeta.adSourceUrl;
+        if (adMeta.adPlatform) updates.adPlatform = adMeta.adPlatform;
+        if (adMeta.adCtwaClid) updates.adCtwaClid = adMeta.adCtwaClid;
+        // Also upgrade the source if it was "organico" or "whatsapp_link"
+        if (existing.source === "organico" || existing.source === "whatsapp_link") {
+          updates.source = resolvedSource;
+        }
+      }
       await prisma.contact.update({ where: { id: contactId }, data: updates });
     } else {
       const created = await prisma.contact.create({
         data: {
           name: fromName || `+${fromNumber}`,
           phone: `+${fromNumber}`,
-          source: "whatsapp_link",
+          source: resolvedSource,
           status: "nuevo_lead",
           tagIds: "[]",
           whatsAppStatus: "connected",
           lastMessageAt: new Date(timestamp),
           customFields: "[]",
           lineId,
+          adId: adMeta?.adId,
+          adHeadline: adMeta?.adHeadline,
+          adSourceUrl: adMeta?.adSourceUrl,
+          adPlatform: adMeta?.adPlatform,
+          adCtwaClid: adMeta?.adCtwaClid,
         },
       });
       contactId = created.id;

@@ -248,6 +248,33 @@ class BaileysManager {
         const fromNumber = remoteJid.split("@")[0].split(":")[0];
         const timestamp = Number(msg.messageTimestamp) * 1000 || Date.now();
 
+        // Extract click-to-WhatsApp ad metadata from Meta, if present.
+        // Lives in extendedTextMessage.contextInfo.externalAdReply for ad-sourced messages.
+        const adReply = msg.message?.extendedTextMessage?.contextInfo?.externalAdReply
+          ?? msg.message?.imageMessage?.contextInfo?.externalAdReply
+          ?? msg.message?.videoMessage?.contextInfo?.externalAdReply;
+        let adMeta: {
+          adId?: string;
+          adHeadline?: string;
+          adSourceUrl?: string;
+          adPlatform?: "facebook" | "instagram";
+          adCtwaClid?: string;
+        } | undefined;
+        if (adReply) {
+          const sourceType = (adReply.sourceType ?? "").toLowerCase();
+          const platform: "facebook" | "instagram" =
+            sourceType.includes("ig") || (adReply.sourceUrl ?? "").includes("instagram.com")
+              ? "instagram"
+              : "facebook";
+          adMeta = {
+            adId: adReply.sourceId ?? undefined,
+            adHeadline: adReply.title ?? adReply.body ?? undefined,
+            adSourceUrl: adReply.sourceUrl ?? undefined,
+            adPlatform: platform,
+            adCtwaClid: adReply.ctwaClid ?? undefined,
+          };
+        }
+
         // Keep raw inbox for the /lineas page
         this.inbox.push({
           id: msg.key.id ?? randomUUID(),
@@ -267,6 +294,7 @@ class BaileysManager {
           fromNumber,
           fromName: msg.pushName ?? undefined,
           body,
+          adMeta,
           timestamp,
           messageId: msg.key.id ?? undefined,
         });

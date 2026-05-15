@@ -50,7 +50,20 @@ export default function ConversationListItem({ contact, selected, unreadCount, p
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2 mb-0.5">
-          <span className="text-sm font-semibold text-slate-900 truncate">{contact.name}</span>
+          <span className="flex items-center gap-1 min-w-0">
+            <span className="text-sm font-semibold text-slate-900 truncate">{contact.name}</span>
+            {(contact.source === "facebook_ads" || contact.source === "instagram") && (
+              <span
+                title={contact.adHeadline ? `Ad: ${contact.adHeadline}` : `Vino de ${contact.source === "instagram" ? "Instagram" : "Facebook"} Ads`}
+                className={cn(
+                  "shrink-0 text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide",
+                  contact.source === "instagram" ? "bg-pink-100 text-pink-700" : "bg-blue-100 text-blue-700"
+                )}
+              >
+                {contact.source === "instagram" ? "IG" : "FB"}
+              </span>
+            )}
+          </span>
           <div className="flex items-center gap-1.5 shrink-0">
             {pending && (
               <span title="Pendiente de respuesta">

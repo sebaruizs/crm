@@ -313,6 +313,38 @@ export default function ContactDetailsSidebar({ contact, onClose, onChangeAgent 
           </FieldRow>
         </Section>
 
+        {(contact.adId || contact.adHeadline || contact.adSourceUrl) && (
+          <Section title="Atribución del anuncio" defaultOpen>
+            {contact.adPlatform && (
+              <FieldRow label="Plataforma">
+                <p className="text-sm text-slate-900 capitalize">{contact.adPlatform}</p>
+              </FieldRow>
+            )}
+            {contact.adHeadline && (
+              <FieldRow label="Anuncio">
+                <p className="text-sm text-slate-900">{contact.adHeadline}</p>
+              </FieldRow>
+            )}
+            {contact.adId && (
+              <FieldRow label="ID del anuncio">
+                <p className="text-xs text-slate-500 font-mono break-all">{contact.adId}</p>
+              </FieldRow>
+            )}
+            {contact.adSourceUrl && (
+              <FieldRow label="URL">
+                <a href={contact.adSourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 underline break-all">
+                  {contact.adSourceUrl}
+                </a>
+              </FieldRow>
+            )}
+            {contact.adCtwaClid && (
+              <FieldRow label="Click ID">
+                <p className="text-xs text-slate-500 font-mono break-all">{contact.adCtwaClid}</p>
+              </FieldRow>
+            )}
+          </Section>
+        )}
+
         <Section title="Cualificación del lead" defaultOpen>
           {contact.customFields.map((cf) => (
             <FieldRow key={cf.key} label={cf.label} collapsible>

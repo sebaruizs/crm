@@ -40,6 +40,13 @@ model Contact {
   lineId           String?
   customFields     String    @default("[]")
 
+  // Click-to-WhatsApp ad metadata (populated when contact came via a Facebook/Instagram ad)
+  adId          String?
+  adHeadline    String?
+  adSourceUrl   String?
+  adPlatform    String?  // "facebook" | "instagram"
+  adCtwaClid    String?  // click-to-WhatsApp click ID (for Meta attribution)
+
   messages      Message[]
   notes         Note[]
   notifications Notification[]
@@ -48,6 +55,7 @@ model Contact {
   @@index([status])
   @@index([assignedAgentId])
   @@index([lastMessageAt])
+  @@index([source])
 }
 
 model Message {

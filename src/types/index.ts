@@ -104,7 +104,13 @@ export interface Contact {
   vehicleInterest?: string;
   licenseVerified: boolean;
   visitScheduledAt?: string;
-  lineId?: string; // which WhatsApp line this contact talks through
+  lineId?: string;
+  // Click-to-WhatsApp ad attribution (only set when lead came via a Meta ad)
+  adId?: string;
+  adHeadline?: string;
+  adSourceUrl?: string;
+  adPlatform?: "facebook" | "instagram";
+  adCtwaClid?: string;
 }
 
 export type KanbanColumnId =

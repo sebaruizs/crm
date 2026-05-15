@@ -5,7 +5,7 @@ import type { Contact } from "@/types";
 import { cn } from "@/lib/utils";
 import ConversationListItem from "./ConversationListItem";
 
-type FilterTab = "no_leido" | "todo" | "sin_asignar" | "pendientes" | "recientes" | "destacado";
+type FilterTab = "ads" | "no_leido" | "todo" | "sin_asignar" | "pendientes" | "recientes" | "destacado";
 
 interface Props {
   contacts: Contact[];
@@ -24,6 +24,7 @@ function isPending(contact: Contact, hours: number): boolean {
 }
 
 const TABS: { id: FilterTab; label: string }[] = [
+  { id: "ads", label: "Ads" },
   { id: "no_leido", label: "No leído" },
   { id: "todo", label: "Todo" },
   { id: "sin_asignar", label: "Sin asignar" },
@@ -33,9 +34,10 @@ const TABS: { id: FilterTab; label: string }[] = [
 ];
 
 export default function ConversationList({ contacts, selectedId, onSelect, unreadMap, starredIds, inactivityHours }: Props) {
-  const [tab, setTab] = useState<FilterTab>("todo");
+  const [tab, setTab] = useState<FilterTab>("ads");
 
   const filtered = contacts.filter((c) => {
+    if (tab === "ads") return c.source === "facebook_ads" || c.source === "instagram";
     if (tab === "no_leido") return (unreadMap[c.id] ?? 0) > 0;
     if (tab === "destacado") return starredIds.has(c.id);
     if (tab === "sin_asignar") return !c.assignedAgentId;
@@ -43,6 +45,7 @@ export default function ConversationList({ contacts, selectedId, onSelect, unrea
     return true;
   });
 
+  const adsCount = contacts.filter((c) => c.source === "facebook_ads" || c.source === "instagram").length;
   const unassignedCount = contacts.filter((c) => !c.assignedAgentId).length;
   const pendingCount = contacts.filter((c) => isPending(c, inactivityHours)).length;
 
@@ -85,6 +88,18 @@ export default function ConversationList({ contacts, selectedId, onSelect, unrea
                   : "border-transparent text-slate-500 hover:text-slate-700"
               )}
             >
+              {t.id === "ads" && (
+                <>
+                  {adsCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-500 text-white text-[10px] font-bold mr-1">
+                      {adsCount}
+                    </span>
+                  )}
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+                  </svg>
+                </>
+              )}
               {t.id === "no_leido" && unreadTotal > 0 && (
                 <span className="px-1.5 py-0.5 rounded bg-blue-500 text-white text-[10px] font-bold mr-1">
                   {unreadTotal}
