@@ -144,6 +144,26 @@ export default function InboxLayout() {
     setTimeout(() => setToast(null), 4000);
   }
 
+  /**
+   * Reads a fetch Response safely:
+   * - If body is JSON, returns parsed
+   * - If body is HTML/text (typical for Next.js error pages), returns
+   *   {error: "<first line of HTML or truncated text>"} so we never crash
+   *   on JSON.parse and the user sees what actually went wrong.
+   */
+  async function readResponse(res: Response): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+    const text = await res.text().catch(() => "");
+    let data: Record<string, unknown> = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      // Non-JSON response — extract something useful from the body
+      const stripped = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      data = { error: `Servidor: ${stripped.slice(0, 160) || `HTTP ${res.status}`}` };
+    }
+    return { ok: res.ok, status: res.status, data };
+  }
+
   async function handleSendMessage(contactId: string, payload: { text: string; file?: File }) {
     const trimmed = payload.text.trim();
     if (!trimmed && !payload.file) return;
@@ -153,17 +173,13 @@ export default function InboxLayout() {
         const form = new FormData();
         form.append("file", payload.file);
         const upRes = await fetch("/api/files/upload", { method: "POST", body: form });
-        const upData = await upRes.json();
-        if (!upRes.ok) {
-          showToast(`Error al subir archivo: ${upData.error ?? "desconocido"}`);
+        const up = await readResponse(upRes);
+        if (!up.ok) {
+          showToast(`Error al subir archivo: ${up.data.error ?? "desconocido"}`);
           return;
         }
-        mediaPayload = {
-          fileId: upData.id,
-          url: upData.url,
-          name: upData.name,
-          mime: upData.mime,
-        };
+        const d = up.data as { id: string; url: string; name?: string; mime?: string };
+        mediaPayload = { fileId: d.id, url: d.url, name: d.name, mime: d.mime };
       }
 
       const res = await fetch(`/api/contacts/${contactId}/send`, {
@@ -171,12 +187,12 @@ export default function InboxLayout() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: trimmed, media: mediaPayload }),
       });
-      const data = await res.json();
-      if (!res.ok || data.ok === false) {
+      const { ok, data } = await readResponse(res);
+      if (!ok || data.ok === false) {
         showToast(`Error al enviar: ${data.error ?? "desconocido"}`);
         return;
       }
-      if (data.warning) showToast(data.warning);
+      if (data.warning) showToast(String(data.warning));
       await refreshContacts();
     } catch (err) {
       showToast(`Error de red: ${String(err)}`);
@@ -185,11 +201,16 @@ export default function InboxLayout() {
 
   async function handleChangeAgent(contactId: string, agentId: string | undefined) {
     try {
-      await fetch(`/api/contacts/${contactId}`, {
+      const res = await fetch(`/api/contacts/${contactId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ assignedAgentId: agentId ?? null }),
       });
+      const { ok, data } = await readResponse(res);
+      if (!ok) {
+        showToast(`Error: ${data.error ?? "no se pudo actualizar el agente"}`);
+        return;
+      }
       await refreshContacts();
     } catch {
       showToast("Error al actualizar el agente");
@@ -199,8 +220,8 @@ export default function InboxLayout() {
   async function handleDeleteContact(contactId: string) {
     try {
       const res = await fetch(`/api/contacts/${contactId}`, { method: "DELETE" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      const { ok, data } = await readResponse(res);
+      if (!ok) {
         showToast(`Error: ${data.error ?? "no se pudo eliminar"}`);
         return;
       }
