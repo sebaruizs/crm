@@ -39,3 +39,23 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Thin horizontal scrollbar for tab strips */
+.scrollbar-thin::-webkit-scrollbar {
+  height: 2px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+.scrollbar-thin:hover::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
+/* Hide visual scrollbar entirely on small horizontal strips while keeping scroll behavior */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -75,14 +75,14 @@ export default function ConversationList({ contacts, selectedId, onSelect, unrea
           </div>
         </div>
 
-        {/* Filter tabs */}
-        <div className="flex items-center gap-4 text-xs">
+        {/* Filter tabs — scrollable horizontally when overflow */}
+        <div className="flex items-center gap-3 text-xs overflow-x-auto -mx-4 px-4 pb-0.5 scrollbar-thin">
           {TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                "flex items-center gap-1 pb-2 border-b-2 font-medium transition-colors",
+                "flex items-center gap-1 pb-2 border-b-2 font-medium transition-colors whitespace-nowrap shrink-0",
                 tab === t.id
                   ? "border-blue-500 text-blue-600"
                   : "border-transparent text-slate-500 hover:text-slate-700"
