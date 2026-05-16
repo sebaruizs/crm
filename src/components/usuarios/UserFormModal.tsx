@@ -21,6 +21,7 @@ export default function UserFormModal({ open, agent, onClose }: Props) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -32,6 +33,7 @@ export default function UserFormModal({ open, agent, onClose }: Props) {
       setPassword("");
       setShowPassword(false);
       setError("");
+      setSubmitting(false);
     }
   }, [open, agent]);
 
@@ -49,8 +51,6 @@ export default function UserFormModal({ open, agent, onClose }: Props) {
   }, [name, agent]);
 
   if (!open) return null;
-
-  const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
