@@ -37,6 +37,20 @@ const DEFAULT_SETTINGS: AutomationSettings = {
  */
 const SEED_TEMPLATES: { id: string; label: string; body: string; shortcut: string }[] = [];
 
+/**
+ * Etapas iniciales del pipeline. Se crean en el primer arranque si la
+ * tabla está vacía. Los keys son los strings que se almacenan en
+ * Contact.status — no cambiarlos a futuro romperá contactos existentes.
+ */
+const SEED_STAGES: { key: string; label: string; color: string; position: number; kind: "pending" | "active" | "won" | "lost" }[] = [
+  { key: "nuevo_lead",       label: "Nuevo Lead",           color: "border-blue-400 bg-blue-50",       position: 0, kind: "pending" },
+  { key: "en_conversacion",  label: "En Conversación",      color: "border-yellow-400 bg-yellow-50",   position: 1, kind: "active" },
+  { key: "en_evaluacion",    label: "En Evaluación",        color: "border-orange-400 bg-orange-50",   position: 2, kind: "active" },
+  { key: "no_califica",      label: "No Califica",          color: "border-red-400 bg-red-50",         position: 3, kind: "lost" },
+  { key: "agendado_visita",  label: "Agendado para Visita", color: "border-emerald-400 bg-emerald-50", position: 4, kind: "won" },
+  { key: "cancelado",        label: "Cancelado",            color: "border-slate-400 bg-slate-50",     position: 5, kind: "lost" },
+];
+
 // Type helpers for Prisma rows → app types
 
 type PrismaContactWith = {
@@ -149,6 +163,18 @@ class CrmStore {
         SEED_TEMPLATES.map((t) =>
           prisma.template.create({
             data: { id: t.id, label: t.label, body: t.body, shortcut: t.shortcut },
+          })
+        )
+      );
+    }
+
+    // Seed pipeline stages if none exist
+    const stageCount = await prisma.pipelineStage.count();
+    if (stageCount === 0) {
+      await prisma.$transaction(
+        SEED_STAGES.map((s) =>
+          prisma.pipelineStage.create({
+            data: { key: s.key, label: s.label, color: s.color, position: s.position, kind: s.kind },
           })
         )
       );
@@ -610,6 +636,72 @@ class CrmStore {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  // ─── Pipeline stages ─────────────────────────────────────────
+
+  async listStages(): Promise<{ id: string; key: string; label: string; color: string; position: number; kind: "pending" | "active" | "won" | "lost" }[]> {
+    const rows = await prisma.pipelineStage.findMany({ orderBy: { position: "asc" } });
+    return rows.map((r) => ({
+      id: r.id,
+      key: r.key,
+      label: r.label,
+      color: r.color,
+      position: r.position,
+      kind: r.kind as "pending" | "active" | "won" | "lost",
+    }));
+  }
+
+  async addStage(input: { key: string; label: string; color: string; kind: "pending" | "active" | "won" | "lost" }) {
+    const max = await prisma.pipelineStage.aggregate({ _max: { position: true } });
+    const r = await prisma.pipelineStage.create({
+      data: {
+        key: input.key.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_"),
+        label: input.label.trim(),
+        color: input.color,
+        kind: input.kind,
+        position: (max._max.position ?? -1) + 1,
+      },
+    });
+    return {
+      id: r.id, key: r.key, label: r.label, color: r.color,
+      position: r.position, kind: r.kind as "pending" | "active" | "won" | "lost",
+    };
+  }
+
+  async updateStage(id: string, patch: Partial<{ label: string; color: string; position: number; kind: "pending" | "active" | "won" | "lost" }>) {
+    const data: Record<string, unknown> = {};
+    if (patch.label !== undefined) data.label = patch.label.trim();
+    if (patch.color !== undefined) data.color = patch.color;
+    if (patch.position !== undefined) data.position = patch.position;
+    if (patch.kind !== undefined) data.kind = patch.kind;
+    // NOTE: key is intentionally NOT editable — it's the FK-like reference
+    // used by Contact.status and changing it would orphan contacts.
+    try {
+      const r = await prisma.pipelineStage.update({ where: { id }, data });
+      return {
+        id: r.id, key: r.key, label: r.label, color: r.color,
+        position: r.position, kind: r.kind as "pending" | "active" | "won" | "lost",
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async deleteStage(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const stage = await prisma.pipelineStage.findUnique({ where: { id } });
+    if (!stage) return { ok: false, error: "Etapa no encontrada" };
+    // Block deletion if any contact still uses this stage's key
+    const contactsUsing = await prisma.contact.count({ where: { status: stage.key } });
+    if (contactsUsing > 0) {
+      return { ok: false, error: `Hay ${contactsUsing} contacto(s) en esta etapa. Movélos a otra antes de borrarla.` };
+    }
+    try {
+      await prisma.pipelineStage.delete({ where: { id } });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "No se pudo eliminar" };
     }
   }
 

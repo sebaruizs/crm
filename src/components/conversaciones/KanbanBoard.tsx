@@ -2,23 +2,9 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
-import type { Contact, KanbanBoardState, KanbanCard, KanbanColumnId } from "@/types";
+import type { Contact, KanbanCard, PipelineStage } from "@/types";
 import KanbanColumn from "./KanbanColumn";
 import ContactDetailPanel from "@/components/contactos/ContactDetailPanel";
-
-const COLUMN_META: Record<KanbanColumnId, { title: string; color: string; headerBg: string }> = {
-  nuevo_lead:        { title: "Nuevo Lead",          color: "border-blue-400",    headerBg: "bg-blue-50"    },
-  en_conversacion:   { title: "En Conversación",     color: "border-yellow-400",  headerBg: "bg-yellow-50"  },
-  en_evaluacion:     { title: "En Evaluación",       color: "border-orange-400",  headerBg: "bg-orange-50"  },
-  no_califica:       { title: "No Califica",         color: "border-red-400",     headerBg: "bg-red-50"     },
-  agendado_visita:   { title: "Agendado para Visita",color: "border-emerald-400", headerBg: "bg-emerald-50" },
-  cancelado:         { title: "Cancelado",            color: "border-slate-400",   headerBg: "bg-slate-50"   },
-};
-
-const COLUMN_ORDER: KanbanColumnId[] = [
-  "nuevo_lead", "en_conversacion", "en_evaluacion",
-  "no_califica", "agendado_visita", "cancelado",
-];
 
 function contactToCard(c: Contact): KanbanCard {
   return {
@@ -36,50 +22,63 @@ function contactToCard(c: Contact): KanbanCard {
 
 export default function KanbanBoard() {
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [stages, setStages] = useState<PipelineStage[]>([]);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
 
-  async function refresh() {
+  async function refreshContacts() {
     try {
       const res = await fetch("/api/contacts", { cache: "no-store" });
       const data = await res.json();
       setContacts(data.contacts ?? []);
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
+  }
+
+  async function refreshStages() {
+    try {
+      const res = await fetch("/api/pipeline-stages", { cache: "no-store" });
+      const data = await res.json();
+      setStages(data.stages ?? []);
+    } catch { /* ignore */ }
   }
 
   useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 5000);
+    refreshStages();
+    refreshContacts();
+    const t = setInterval(refreshContacts, 5000);
     return () => clearInterval(t);
   }, []);
 
-  const board: KanbanBoardState = useMemo(() => {
-    const columns = Object.fromEntries(
-      COLUMN_ORDER.map((id) => [id, { id, ...COLUMN_META[id], cards: [] as KanbanCard[] }])
-    ) as KanbanBoardState["columns"];
+  // Build columns dynamically from stages + group contacts
+  const columns = useMemo(() => {
+    const grouped: Record<string, KanbanCard[]> = {};
+    for (const s of stages) grouped[s.key] = [];
     for (const c of contacts) {
-      const col = columns[c.status];
-      if (col) col.cards.push(contactToCard(c));
+      const cards = grouped[c.status];
+      if (cards) cards.push(contactToCard(c));
     }
-    // Sort each column by lastMessageAt desc
-    for (const id of COLUMN_ORDER) {
-      columns[id].cards.sort(
+    for (const key of Object.keys(grouped)) {
+      grouped[key].sort(
         (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
       );
     }
-    return { columnOrder: COLUMN_ORDER, columns };
-  }, [contacts]);
+    return stages.map((s) => ({
+      id: s.key,
+      title: s.label,
+      color: s.color.split(" ").find((c) => c.startsWith("border-")) ?? "border-slate-400",
+      headerBg: s.color.split(" ").find((c) => c.startsWith("bg-")) ?? "bg-slate-50",
+      cards: grouped[s.key],
+    }));
+  }, [stages, contacts]);
 
   async function onDragEnd(result: DropResult) {
     const { source, destination, draggableId } = result;
     if (!destination) return;
     if (source.droppableId === destination.droppableId) return;
-    const newStatus = destination.droppableId as KanbanColumnId;
+    const newStatus = destination.droppableId;
 
     // Optimistic update
     setContacts((prev) =>
-      prev.map((c) => (c.id === draggableId ? { ...c, status: newStatus } : c))
+      prev.map((c) => (c.id === draggableId ? { ...c, status: newStatus as Contact["status"] } : c))
     );
 
     try {
@@ -89,8 +88,7 @@ export default function KanbanBoard() {
         body: JSON.stringify({ status: newStatus }),
       });
     } catch {
-      // Roll back on error by refetching
-      refresh();
+      refreshContacts();
     }
   }
 
@@ -108,21 +106,36 @@ export default function KanbanBoard() {
           <span className="font-medium text-slate-700">{totalCards} leads en pipeline</span>
           <span className="w-px h-4 bg-slate-200" />
           <span>Arrastra las tarjetas para mover entre etapas</span>
+          <span className="flex-1" />
+          <a href="/etapas" className="text-xs text-blue-600 hover:underline">
+            Configurar etapas
+          </a>
         </div>
 
-        <DragDropContext onDragEnd={onDragEnd}>
-          <div className="flex-1 overflow-x-auto overflow-y-auto p-6">
-            <div className="flex gap-4 h-full items-start">
-              {board.columnOrder.map((colId) => (
-                <KanbanColumn
-                  key={colId}
-                  column={board.columns[colId]}
-                  onCardClick={handleCardClick}
-                />
-              ))}
+        {stages.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center text-slate-400">
+            <div className="text-center">
+              <p className="text-sm mb-2">No hay etapas configuradas</p>
+              <a href="/etapas" className="text-sm text-blue-600 hover:underline">
+                Crear etapas →
+              </a>
             </div>
           </div>
-        </DragDropContext>
+        ) : (
+          <DragDropContext onDragEnd={onDragEnd}>
+            <div className="flex-1 overflow-x-auto overflow-y-auto p-6">
+              <div className="flex gap-4 h-full items-start">
+                {columns.map((col) => (
+                  <KanbanColumn
+                    key={col.id}
+                    column={col}
+                    onCardClick={handleCardClick}
+                  />
+                ))}
+              </div>
+            </div>
+          </DragDropContext>
+        )}
       </div>
 
       {selectedContact && (

@@ -186,6 +186,18 @@ model Tag {
   createdAt DateTime @default(now())
 }
 
+model PipelineStage {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  label     String
+  color     String   // Tailwind class for the column header e.g. "border-blue-400 bg-blue-50"
+  position  Int      @default(0)
+  kind      String   @default("active") // "pending" | "active" | "won" | "lost"
+  createdAt DateTime @default(now())
+
+  @@index([position])
+}
+
 model CustomFieldDef {
   id        String   @id @default(cuid())
   key       String   @unique

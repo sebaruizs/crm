@@ -111,6 +111,17 @@ export interface AuditEntry {
 
 export type CustomFieldType = "text" | "number" | "date" | "select";
 
+export type StageKind = "pending" | "active" | "won" | "lost";
+
+export interface PipelineStage {
+  id: string;
+  key: string;
+  label: string;
+  color: string;
+  position: number;
+  kind: StageKind;
+}
+
 export interface CustomFieldDefinition {
   id: string;
   key: string;
@@ -158,13 +169,8 @@ export interface Contact {
   chatbotAnswers?: Record<string, string>;
 }
 
-export type KanbanColumnId =
-  | "nuevo_lead"
-  | "en_conversacion"
-  | "en_evaluacion"
-  | "no_califica"
-  | "agendado_visita"
-  | "cancelado";
+// Column id is the stage key (string) — can be any custom key
+export type KanbanColumnId = string;
 
 export interface KanbanCard {
   id: string;
