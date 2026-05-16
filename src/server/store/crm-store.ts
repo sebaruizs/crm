@@ -289,6 +289,16 @@ class CrmStore {
     };
   }): Promise<{ contact: Contact; isNew: boolean }> {
     const { lineId, fromNumber, fromName, body, timestamp, messageId, adMeta, mediaMeta } = params;
+
+    // Idempotent: if we already stored this exact message, just return the contact.
+    if (messageId) {
+      const dup = await prisma.message.findUnique({ where: { id: messageId } });
+      if (dup) {
+        const contact = await this.get(dup.contactId);
+        if (contact) return { contact, isNew: false };
+      }
+    }
+
     const existing = await this.findByPhone(fromNumber);
     const isNew = !existing;
     let contactId: string;
@@ -395,6 +405,24 @@ class CrmStore {
   ): Promise<MessagePreview | null> {
     const exists = await prisma.contact.findUnique({ where: { id: contactId } });
     if (!exists) return null;
+    // Dedup by messageId — if Baileys later emits messages.upsert with the
+    // same id for our own send, we don't want to insert it twice.
+    if (messageId) {
+      const dup = await prisma.message.findUnique({ where: { id: messageId } });
+      if (dup) {
+        return {
+          id: dup.id,
+          direction: dup.direction as "inbound" | "outbound",
+          body: dup.body,
+          sentAt: dup.sentAt.toISOString(),
+          status: dup.status as MessagePreview["status"],
+          mediaType: (dup.mediaType as MessagePreview["mediaType"]) ?? undefined,
+          mediaUrl: dup.mediaUrl ?? undefined,
+          mediaName: dup.mediaName ?? undefined,
+          mediaMime: dup.mediaMime ?? undefined,
+        };
+      }
+    }
     const now = new Date();
     const msg = await prisma.message.create({
       data: {
@@ -425,6 +453,81 @@ class CrmStore {
       mediaName: msg.mediaName ?? undefined,
       mediaMime: msg.mediaMime ?? undefined,
     };
+  }
+
+  /**
+   * Records an outbound message that was sent OUTSIDE the CRM — e.g. when
+   * the user replies from their phone or WhatsApp Web. Called by the Baileys
+   * webhook handler when it sees a message with fromMe=true.
+   *
+   * Creates the contact if it doesn't exist yet (case: user starts a chat
+   * from their phone with a brand-new number).
+   *
+   * Idempotent: if a message with the same messageId already exists (because
+   * we previously sent it from the CRM and got an echo back), skips insert.
+   */
+  async recordExternalOutbound(params: {
+    lineId: string;
+    toNumber: string;
+    body: string;
+    timestamp: number;
+    messageId?: string;
+    mediaMeta?: { type: "image" | "video" | "audio" | "document"; url: string; name?: string; mime?: string };
+  }): Promise<{ contact: Contact; isNew: boolean } | null> {
+    const { lineId, toNumber, body, timestamp, messageId, mediaMeta } = params;
+
+    // Dedup by messageId
+    if (messageId) {
+      const dup = await prisma.message.findUnique({ where: { id: messageId } });
+      if (dup) {
+        const contact = await this.get(dup.contactId);
+        return contact ? { contact, isNew: false } : null;
+      }
+    }
+
+    const existing = await this.findByPhone(toNumber);
+    const isNew = !existing;
+    let contactId: string;
+
+    if (existing) {
+      contactId = existing.id;
+      const updates: Record<string, unknown> = { lastMessageAt: new Date(timestamp) };
+      if (!existing.lineId) updates.lineId = lineId;
+      await prisma.contact.update({ where: { id: contactId }, data: updates });
+    } else {
+      const created = await prisma.contact.create({
+        data: {
+          name: `+${toNumber}`,
+          phone: `+${toNumber}`,
+          source: "organico",
+          status: "nuevo_lead",
+          tagIds: "[]",
+          whatsAppStatus: "connected",
+          lastMessageAt: new Date(timestamp),
+          customFields: "[]",
+          lineId,
+        },
+      });
+      contactId = created.id;
+    }
+
+    await prisma.message.create({
+      data: {
+        id: messageId,
+        contactId,
+        direction: "outbound",
+        body,
+        sentAt: new Date(timestamp),
+        status: "sent",
+        mediaType: mediaMeta?.type ?? null,
+        mediaUrl: mediaMeta?.url ?? null,
+        mediaName: mediaMeta?.name ?? null,
+        mediaMime: mediaMeta?.mime ?? null,
+      },
+    });
+
+    const fresh = await this.get(contactId);
+    return fresh ? { contact: fresh, isNew } : null;
   }
 
   async patch(

@@ -452,11 +452,12 @@ class BaileysManager {
       if (type !== "notify") return;
       await crmStore.init();
       for (const msg of messages) {
-        if (msg.key.fromMe) continue;
         const remoteJid = msg.key.remoteJid;
         if (!remoteJid) continue;
         const isGroup = remoteJid.endsWith("@g.us");
         if (isGroup) continue; // skip group chats for CRM ingestion
+
+        const fromMe = !!msg.key.fromMe;
 
         // Detect media on the message
         const imageMsg = msg.message?.imageMessage;
@@ -473,7 +474,8 @@ class BaileysManager {
           documentMsg?.caption ??
           (hasMedia ? "" : "");
         if (!body && !hasMedia) continue;
-        const fromNumber = remoteJid.split("@")[0].split(":")[0];
+        const peerNumber = remoteJid.split("@")[0].split(":")[0];
+        const fromNumber = peerNumber; // backward-compat alias
         const timestamp = Number(msg.messageTimestamp) * 1000 || Date.now();
 
         // Download media if present (skip audio for now — saves bandwidth)
@@ -542,18 +544,36 @@ class BaileysManager {
           id: msg.key.id ?? randomUUID(),
           lineId: id,
           from: remoteJid,
-          fromNumber,
+          fromNumber: peerNumber,
           fromName: msg.pushName ?? undefined,
-          body,
+          body: fromMe ? `(yo) ${body}` : body,
           timestamp,
           isGroup,
         });
         if (this.inbox.length > MAX_INBOX) this.inbox.shift();
 
-        // Upsert into the CRM (creates contact if unknown, appends message)
+        // ─── fromMe path: user replied from their phone / WhatsApp Web ───
+        // Record as OUTBOUND on the contact's history. Idempotent — if this
+        // is the echo of a message we already sent via /api/contacts/:id/send,
+        // recordExternalOutbound dedupes by messageId.
+        if (fromMe) {
+          await crmStore.recordExternalOutbound({
+            lineId: id,
+            toNumber: peerNumber,
+            body,
+            mediaMeta,
+            timestamp,
+            messageId: msg.key.id ?? undefined,
+          });
+          // Don't run welcome / auto-assign / chatbot for outbound messages —
+          // those only make sense in response to inbound from the customer.
+          continue;
+        }
+
+        // ─── Inbound path (customer wrote to us) ───
         const { contact, isNew } = await crmStore.upsertFromInbound({
           lineId: id,
-          fromNumber,
+          fromNumber: peerNumber,
           fromName: msg.pushName ?? undefined,
           body,
           adMeta,
@@ -580,7 +600,7 @@ class BaileysManager {
             if (tpl) {
               const firstName = contact.name.split(" ")[0].replace(/^\+/, "");
               const text = tpl.body.replace(/\{\{nombre\}\}/g, firstName);
-              this.send(id, fromNumber, text).then(async (res) => {
+              this.send(id, peerNumber, text).then(async (res) => {
                 if (res.ok) {
                   await crmStore.appendOutbound(contact.id, text, res.id);
                 }
@@ -589,11 +609,11 @@ class BaileysManager {
           }
         }
 
-        // Chatbot flow handling
+        // Chatbot flow handling (only for inbound)
         try {
           const settings = await crmStore.getSettings();
           if (settings.chatbotEnabled && settings.chatbotQuestions.length > 0) {
-            await this.runChatbotStep(id, contact.id, fromNumber, body);
+            await this.runChatbotStep(id, contact.id, peerNumber, body);
           }
         } catch (err) {
           console.warn("[chatbot] step failed:", err);
